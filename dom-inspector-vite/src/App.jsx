@@ -1,24 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-function App() {
-  const [data, setData] = useState(null);
-
-  useEffect(() => {
-    if (chrome.runtime) {
-      chrome.runtime.onMessage.addListener((msg) => {
-        if (msg.type === "ELEMENT_DATA") {
-          setData(msg.payload);
-        }
-      });
-    }
-  }, []);
-
-  const inspectElement = async () => {
-    if (!chrome.tabs) {
-      alert("Chrome API not available. Test in extension only.");
-      return;
-    }
-
+export default function App() {
+  const startInspect = async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
@@ -27,18 +10,16 @@ function App() {
     chrome.tabs.sendMessage(tab.id, { type: "START_INSPECT" });
   };
 
-  return (
-    <div style={{ padding: 16, width: 280 }}>
-      <h3>DOM Inspector</h3>
-      <button onClick={inspectElement}>Inspect Element</button>
+  const clearOverlay = async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    chrome.tabs.sendMessage(tab.id, { type: "CLEAR_OVERLAY" });
+  };
 
-      {data && (
-        <pre style={{ marginTop: 10 }}>
-          {JSON.stringify(data, null, 2)}
-        </pre>
-      )}
+
+  return (
+    <div style={{ padding: 16, width: 200 }}>
+      <button onClick={startInspect} style={{ marginBottom: 8 }}>Start Inspect</button>
+      <button onClick={clearOverlay}>Clear Overlay</button>
     </div>
   );
 }
-
-export default App;
