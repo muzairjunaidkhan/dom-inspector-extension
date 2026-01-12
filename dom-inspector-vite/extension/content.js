@@ -1,10 +1,22 @@
 (() => {
-  if (window.__DOM_INSPECTOR__) return;
+  // Prevent multiple instances
+  if (window.__DOM_INSPECTOR__) {
+    console.log('[DOM Inspector] Already initialized');
+    return;
+  }
   window.__DOM_INSPECTOR__ = true;
 
+  // Lifecycle states
+  const STATES = {
+    IDLE: 'IDLE',
+    INSPECTING: 'INSPECTING',
+    SELECTED: 'SELECTED',
+    CLEANING: 'CLEANING'
+  };
+
   const S = {
+    state: STATES.IDLE,
     inspecting: false,
-    hoverOverlay: null,
     hoverPanel: null,
     panelContainer: null,
     inspectBtn: null,
@@ -15,11 +27,33 @@
     panelY: null,
     isDragging: false,
     dragOffsetX: 0,
-    dragOffsetY: 0
+    dragOffsetY: 0,
+    // Event handler references for cleanup
+    handlers: {
+      mousemove: null,
+      click: null,
+      keydown: null,
+      scroll: null,
+      drag: null,
+      stopDrag: null
+    }
   };
 
   /* ---------------- UTILS ---------------- */
-  const remove = (el) => el && el.remove();
+  const remove = (el) => {
+    if (el && el.parentNode) {
+      el.parentNode.removeChild(el);
+    }
+  };
+
+  const isValidState = () => {
+    return window.__DOM_INSPECTOR__ && S.state !== STATES.CLEANING;
+  };
+
+  const setState = (newState) => {
+    console.log(`[DOM Inspector] ${S.state} → ${newState}`);
+    S.state = newState;
+  };
 
   const cssText = (d) => `
 ${d.selector} {
@@ -74,7 +108,6 @@ ${d.selector} {
       if (classes.length > 0) selector += "." + classes.join(".");
     }
     
-    // Parse individual margin/padding values
     const parseBox = (str) => {
       const parts = str.split(' ').map(p => parseFloat(p) || 0);
       if (parts.length === 1) return [parts[0], parts[0], parts[0], parts[0]];
@@ -136,13 +169,12 @@ ${d.selector} {
   };
 
   const isInspectorElement = (el) => {
+    if (!el) return false;
     return el === S.inspectBtn || 
-           el === S.hoverOverlay || 
            el === S.hoverPanel || 
            el === S.panelContainer ||
            (S.panelContainer && S.panelContainer.contains(el)) ||
            el.classList.contains('di-inspect-btn') ||
-           el.classList.contains('di-hover-overlay') ||
            el.classList.contains('di-hover-panel') ||
            el.classList.contains('di-selected-panel') ||
            el.classList.contains('di-selected-overlay') ||
@@ -155,6 +187,8 @@ ${d.selector} {
 
   /* ---------------- BOX MODEL VISUALIZATION ---------------- */
   function updateBoxModelLayers(data) {
+    if (!isValidState()) return;
+    
     // Remove old layers
     Object.values(S.boxModelLayers).forEach(layer => remove(layer));
     S.boxModelLayers = {};
@@ -176,7 +210,8 @@ ${d.selector} {
       background: "rgba(246, 178, 107, 0.35)",
       border: "1px solid rgba(246, 178, 107, 0.9)",
       zIndex: 99995,
-      pointerEvents: "none"
+      pointerEvents: "none",
+      boxSizing: "border-box"
     });
     document.body.appendChild(marginLayer);
     S.boxModelLayers.margin = marginLayer;
@@ -193,12 +228,13 @@ ${d.selector} {
       background: "rgba(255, 229, 153, 0.35)",
       border: "1px solid rgba(255, 229, 153, 0.9)",
       zIndex: 99996,
-      pointerEvents: "none"
+      pointerEvents: "none",
+      boxSizing: "border-box"
     });
     document.body.appendChild(borderLayer);
     S.boxModelLayers.border = borderLayer;
     
-    // Padding + Content layer (blue)
+    // Content layer (blue)
     const contentWidth = r.width - border[1] - border[3] - padding[1] - padding[3];
     const contentHeight = r.height - border[0] - border[2] - padding[0] - padding[2];
     
@@ -214,7 +250,8 @@ ${d.selector} {
         background: "rgba(139, 195, 245, 0.35)",
         border: "1px solid rgba(139, 195, 245, 0.9)",
         zIndex: 99997,
-        pointerEvents: "none"
+        pointerEvents: "none",
+        boxSizing: "border-box"
       });
       document.body.appendChild(contentLayer);
       S.boxModelLayers.content = contentLayer;
@@ -223,13 +260,7 @@ ${d.selector} {
 
   function hideBoxModelLayers() {
     Object.values(S.boxModelLayers).forEach(layer => {
-      if (layer) layer.style.display = "none";
-    });
-  }
-
-  function showBoxModelLayers() {
-    Object.values(S.boxModelLayers).forEach(layer => {
-      if (layer) layer.style.display = "block";
+      if (layer && layer.style) layer.style.display = "none";
     });
   }
 
@@ -252,11 +283,34 @@ ${d.selector} {
       border: "none",
       borderRadius: "6px",
       cursor: "pointer",
-      fontFamily: "system-ui, -apple-system, sans-serif"
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      fontSize: "13px",
+      fontWeight: "500",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+      transition: "all 0.2s"
     });
+    
+    btn.onmouseenter = () => {
+      if (S.state === STATES.IDLE) {
+        btn.style.background = "#005a9e";
+        btn.style.transform = "translateY(-1px)";
+        btn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
+      }
+    };
+    
+    btn.onmouseleave = () => {
+      if (S.state === STATES.IDLE) {
+        btn.style.background = "#007acc";
+        btn.style.transform = "translateY(0)";
+        btn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
+      }
+    };
+    
     btn.onclick = (e) => {
       e.stopPropagation();
-      startInspect();
+      if (S.state === STATES.IDLE || S.state === STATES.SELECTED) {
+        startInspect();
+      }
     };
     document.body.appendChild(btn);
     S.inspectBtn = btn;
@@ -270,16 +324,17 @@ ${d.selector} {
         position: "fixed",
         top: "10px",
         left: "10px",
-        background: "#222",
+        background: "rgba(34, 34, 34, 0.95)",
         color: "#fff",
         fontSize: "11px",
         padding: "8px 10px",
         borderRadius: "6px",
         zIndex: 99999,
         pointerEvents: "none",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+        boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
         maxWidth: "350px",
-        fontFamily: "system-ui, -apple-system, monospace"
+        fontFamily: "system-ui, -apple-system, monospace",
+        backdropFilter: "blur(10px)"
       });
       document.body.appendChild(S.hoverPanel);
     }
@@ -299,13 +354,14 @@ ${d.selector} {
         left: startX + "px",
         width: "320px",
         maxHeight: "80vh",
-        background: "#1e1e1e",
+        background: "rgba(30, 30, 30, 0.95)",
         color: "#fff",
         fontSize: "12px",
         borderRadius: "6px",
         zIndex: 99999,
-        boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
-        fontFamily: "system-ui, -apple-system, sans-serif"
+        boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+        backdropFilter: "blur(10px)"
       });
       
       const header = document.createElement("div");
@@ -365,30 +421,35 @@ ${d.selector} {
 
   function togglePanelCollapse() {
     S.panelCollapsed = !S.panelCollapsed;
-    const content = S.panelContainer.querySelector(".di-panel-content");
-    const collapseBtn = S.panelContainer.querySelector(".di-collapse-btn");
+    const content = S.panelContainer?.querySelector(".di-panel-content");
+    const collapseBtn = S.panelContainer?.querySelector(".di-collapse-btn");
     
-    if (S.panelCollapsed) {
-      content.style.display = "none";
-      collapseBtn.textContent = "+";
-    } else {
-      content.style.display = "block";
-      collapseBtn.textContent = "−";
+    if (content && collapseBtn) {
+      if (S.panelCollapsed) {
+        content.style.display = "none";
+        collapseBtn.textContent = "+";
+      } else {
+        content.style.display = "block";
+        collapseBtn.textContent = "−";
+      }
     }
   }
 
   function startDrag(e) {
+    if (!S.panelContainer) return;
     S.isDragging = true;
     const rect = S.panelContainer.getBoundingClientRect();
     S.dragOffsetX = e.clientX - rect.left;
     S.dragOffsetY = e.clientY - rect.top;
     
-    document.addEventListener("mousemove", drag);
-    document.addEventListener("mouseup", stopDrag);
+    S.handlers.drag = drag;
+    S.handlers.stopDrag = stopDrag;
+    document.addEventListener("mousemove", S.handlers.drag);
+    document.addEventListener("mouseup", S.handlers.stopDrag);
   }
 
   function drag(e) {
-    if (!S.isDragging) return;
+    if (!S.isDragging || !S.panelContainer) return;
     
     const x = e.clientX - S.dragOffsetX;
     const y = e.clientY - S.dragOffsetY;
@@ -402,24 +463,34 @@ ${d.selector} {
 
   function stopDrag() {
     S.isDragging = false;
-    document.removeEventListener("mousemove", drag);
-    document.removeEventListener("mouseup", stopDrag);
+    if (S.handlers.drag) document.removeEventListener("mousemove", S.handlers.drag);
+    if (S.handlers.stopDrag) document.removeEventListener("mouseup", S.handlers.stopDrag);
   }
 
   /* ---------------- INSPECT FLOW ---------------- */
   function startInspect() {
+    if (!isValidState() || S.state === STATES.INSPECTING) return;
+    
+    setState(STATES.INSPECTING);
     S.inspecting = true;
     document.body.style.cursor = "crosshair";
     ensureInspectButton();
     ensureHoverUI();
     
     if (S.inspectBtn) {
-      S.inspectBtn.textContent = "Inspecting...";
+      S.inspectBtn.textContent = "Inspecting... (Esc to exit)";
       S.inspectBtn.style.background = "#ff6600";
+      S.inspectBtn.style.transform = "none";
     }
+    
+    // Attach event listeners
+    attachEventListeners();
   }
 
   function stopInspect() {
+    if (!isValidState()) return;
+    
+    setState(S.selectedItems.length > 0 ? STATES.SELECTED : STATES.IDLE);
     S.inspecting = false;
     document.body.style.cursor = "default";
     
@@ -431,8 +502,131 @@ ${d.selector} {
     hideBoxModelLayers();
   }
 
+  /* ---------------- EVENT HANDLERS ---------------- */
+  function attachEventListeners() {
+    // Remove existing listeners first
+    detachEventListeners();
+    
+    S.handlers.mousemove = handleMouseMove;
+    S.handlers.click = handleClick;
+    S.handlers.keydown = handleKeyDown;
+    S.handlers.scroll = handleScroll;
+    
+    document.addEventListener("mousemove", S.handlers.mousemove);
+    document.addEventListener("click", S.handlers.click, true);
+    document.addEventListener("keydown", S.handlers.keydown);
+    document.addEventListener("scroll", S.handlers.scroll, true);
+  }
+
+  function detachEventListeners() {
+    if (S.handlers.mousemove) document.removeEventListener("mousemove", S.handlers.mousemove);
+    if (S.handlers.click) document.removeEventListener("click", S.handlers.click, true);
+    if (S.handlers.keydown) document.removeEventListener("keydown", S.handlers.keydown);
+    if (S.handlers.scroll) document.removeEventListener("scroll", S.handlers.scroll, true);
+  }
+
+  function handleMouseMove(e) {
+    if (!isValidState() || !S.inspecting) return;
+    
+    if (isInspectorElement(e.target)) {
+      hideBoxModelLayers();
+      if (S.hoverPanel) S.hoverPanel.style.display = "none";
+      return;
+    }
+    
+    const d = getData(e.target);
+    updateBoxModelLayers(d);
+    
+    if (S.hoverPanel) {
+      S.hoverPanel.style.display = "block";
+      const props = [];
+      props.push(`<b style="color: #4fc3f7;">${d.selector}</b>`);
+      props.push(`<span style="color: #999;">${d.width} × ${d.height}</span>`);
+      
+      if (d.display !== 'inline') {
+        props.push(`display: <span style="color: #f9d71c;">${d.display}</span>`);
+      }
+      if (d.position !== 'static') {
+        props.push(`position: <span style="color: #f9d71c;">${d.position}</span>`);
+      }
+      if (d.margin !== '0px') {
+        props.push(`margin: <span style="color: #f6b26b;">${d.margin}</span>`);
+      }
+      if (d.padding !== '0px') {
+        props.push(`padding: <span style="color: #8bc3f5;">${d.padding}</span>`);
+      }
+      if (d.fontSize) {
+        props.push(`font: <span style="color: #b5cea8;">${d.fontSize}</span>`);
+      }
+      if (d.color && d.color !== 'rgb(0, 0, 0)') {
+        props.push(`color: <span style="color: ${d.color};">${d.color}</span>`);
+      }
+      
+      S.hoverPanel.innerHTML = props.join('<br>');
+    }
+  }
+
+  function handleClick(e) {
+    if (!isValidState() || !S.inspecting) return;
+    
+    if (isInspectorElement(e.target)) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    addSelected(getData(e.target));
+    stopInspect();
+  }
+
+  function handleKeyDown(e) {
+    if (!isValidState() || !S.inspecting) return;
+    
+    if (e.key === "Escape") {
+      e.preventDefault();
+      stopInspect();
+    } else if (e.key === "c" || e.key === "C") {
+      const hoveredEl = document.elementFromPoint(e.clientX || 0, e.clientY || 0);
+      if (hoveredEl && !isInspectorElement(hoveredEl)) {
+        e.preventDefault();
+        const data = getData(hoveredEl);
+        navigator.clipboard.writeText(cssText(data));
+        
+        if (S.hoverPanel) {
+          S.hoverPanel.innerHTML = '<div style="color: #4caf50; text-align: center;">✓ CSS Copied!</div>';
+          setTimeout(() => {
+            if (S.inspecting && isValidState()) {
+              const currentEl = document.elementFromPoint(e.clientX || 0, e.clientY || 0);
+              if (currentEl && !isInspectorElement(currentEl)) {
+                handleMouseMove({ target: currentEl });
+              }
+            }
+          }, 800);
+        }
+      }
+    }
+  }
+
+  let scrollTimeout;
+  function handleScroll() {
+    if (!isValidState() || !S.inspecting) return;
+    
+    hideBoxModelLayers();
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      if (S.inspecting && isValidState()) {
+        const hoveredEl = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+        if (hoveredEl && !isInspectorElement(hoveredEl)) {
+          updateBoxModelLayers(getData(hoveredEl));
+        }
+      }
+    }, 50);
+  }
+
   /* ---------------- SELECTED ITEMS ---------------- */
   function addSelected(data) {
+    if (!isValidState() || !Array.isArray(S.selectedItems)) {
+      S.selectedItems = [];
+    }
+    
     ensurePanelContainer();
 
     const overlay = document.createElement("div");
@@ -443,10 +637,11 @@ ${d.selector} {
       left: (data.rect.left + window.scrollX) + "px",
       width: data.rect.width + "px",
       height: data.rect.height + "px",
-      border: "2px solid lime",
+      border: "2px solid #00ff00",
       background: "rgba(0,255,0,.1)",
       zIndex: 99994,
-      pointerEvents: "none"
+      pointerEvents: "none",
+      boxSizing: "border-box"
     });
     document.body.appendChild(overlay);
 
@@ -454,10 +649,10 @@ ${d.selector} {
     item.className = "di-panel-item";
     item.style.borderBottom = "1px solid #444";
     item.style.marginBottom = "8px";
-    item.style.paddingBottom = "4px";
+    item.style.paddingBottom = "8px";
     
     const header = document.createElement("div");
-    header.innerHTML = `<b>${data.selector}</b><div style="color: #999;">${data.width} × ${data.height}</div>`;
+    header.innerHTML = `<b>${data.selector}</b><div style="color: #999; margin-top: 2px;">${data.width} × ${data.height}</div>`;
     
     const cssPreview = document.createElement("pre");
     cssPreview.className = "di-css-preview";
@@ -466,14 +661,19 @@ ${d.selector} {
       padding: 8px;
       margin: 8px 0;
       border-radius: 4px;
-      font-size: 11px;
+      font-size: 10px;
       overflow-x: auto;
       max-height: 200px;
       overflow-y: auto;
-      font-family: monospace;
+      font-family: 'Courier New', monospace;
+      line-height: 1.4;
     `;
     cssPreview.textContent = cssText(data);
 
+    const btnContainer = document.createElement("div");
+    btnContainer.style.display = "flex";
+    btnContainer.style.gap = "6px";
+    
     const copyBtn = document.createElement("button");
     copyBtn.className = "di-button di-copy-btn";
     copyBtn.textContent = "Copy CSS";
@@ -485,182 +685,102 @@ ${d.selector} {
 
     const clearBtn = document.createElement("button");
     clearBtn.className = "di-button di-clear-btn";
-    clearBtn.textContent = "Clear";
+    clearBtn.textContent = "Remove";
 
     [copyBtn, clearBtn].forEach(b => Object.assign(b.style, {
       marginTop: "6px",
-      marginRight: "6px",
-      padding: "4px 8px",
+      padding: "6px 10px",
       border: "none",
       borderRadius: "4px",
       cursor: "pointer",
-      fontFamily: "system-ui, -apple-system, sans-serif"
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      fontSize: "11px",
+      fontWeight: "500",
+      transition: "all 0.2s"
     }));
 
     copyBtn.style.background = "#007acc";
     copyBtn.style.color = "#fff";
     clearBtn.style.background = "#cc0000";
     clearBtn.style.color = "#fff";
+    
+    copyBtn.onmouseenter = () => copyBtn.style.background = "#005a9e";
+    copyBtn.onmouseleave = () => copyBtn.style.background = "#007acc";
+    clearBtn.onmouseenter = () => clearBtn.style.background = "#990000";
+    clearBtn.onmouseleave = () => clearBtn.style.background = "#cc0000";
 
     clearBtn.onclick = () => {
       remove(overlay);
       remove(item);
-      S.selectedItems = S.selectedItems.filter(i => i.item !== item);
+      
+      if (Array.isArray(S.selectedItems)) {
+        S.selectedItems = S.selectedItems.filter(i => i.item !== item);
 
-      if (S.selectedItems.length === 0) {
-        remove(S.panelContainer);
-        remove(S.hoverPanel);
-        S.panelContainer = null;
-        S.hoverPanel = null;
+        if (S.selectedItems.length === 0) {
+          remove(S.panelContainer);
+          remove(S.hoverPanel);
+          S.panelContainer = null;
+          S.hoverPanel = null;
+          setState(STATES.IDLE);
+        }
       }
     };
 
-    item.append(header, cssPreview, copyBtn, clearBtn);
-    const content = S.panelContainer.querySelector(".di-panel-content");
-    content.appendChild(item);
+    btnContainer.appendChild(copyBtn);
+    btnContainer.appendChild(clearBtn);
+    item.append(header, cssPreview, btnContainer);
+    
+    const content = S.panelContainer?.querySelector(".di-panel-content");
+    if (content) {
+      content.appendChild(item);
+    }
 
     S.selectedItems.push({ overlay, item });
   }
 
-  /* ---------------- EVENTS ---------------- */
-  document.addEventListener("mousemove", (e) => {
-    if (!S.inspecting) return;
+  /* ---------------- CLEANUP ---------------- */
+  function cleanup() {
+    console.log('[DOM Inspector] Cleaning up...');
+    setState(STATES.CLEANING);
     
-    if (isInspectorElement(e.target)) {
-      hideBoxModelLayers();
-      if (S.hoverPanel) S.hoverPanel.style.display = "none";
-      return;
+    detachEventListeners();
+    stopDrag();
+    
+    remove(S.hoverPanel);
+    remove(S.panelContainer);
+    remove(S.inspectBtn);
+    Object.values(S.boxModelLayers).forEach(layer => remove(layer));
+    
+    if (Array.isArray(S.selectedItems)) {
+      S.selectedItems.forEach(i => remove(i.overlay));
     }
     
-    const d = getData(e.target);
+    S.hoverPanel = null;
+    S.panelContainer = null;
+    S.inspectBtn = null;
+    S.boxModelLayers = {};
+    S.selectedItems = [];
     
-    updateBoxModelLayers(d);
+    document.body.style.cursor = "default";
+    window.__DOM_INSPECTOR__ = false;
     
-    if (S.hoverPanel) {
-      S.hoverPanel.style.display = "block";
-      
-      // Show important properties
-      const props = [];
-      props.push(`<b style="color: #4fc3f7;">${d.selector}</b>`);
-      props.push(`<span style="color: #999;">${d.width} × ${d.height}</span>`);
-      
-      if (d.display !== 'inline') {
-        props.push(`display: <span style="color: #f9d71c;">${d.display}</span>`);
-      }
-      
-      if (d.position !== 'static') {
-        props.push(`position: <span style="color: #f9d71c;">${d.position}</span>`);
-      }
-      
-      if (d.margin !== '0px') {
-        props.push(`margin: <span style="color: #f6b26b;">${d.margin}</span>`);
-      }
-      
-      if (d.padding !== '0px') {
-        props.push(`padding: <span style="color: #8bc3f5;">${d.padding}</span>`);
-      }
-      
-      if (d.fontSize) {
-        props.push(`font: <span style="color: #b5cea8;">${d.fontSize}</span>`);
-      }
-      
-      if (d.color && d.color !== 'rgb(0, 0, 0)') {
-        props.push(`color: <span style="color: ${d.color};">${d.color}</span>`);
-      }
-      
-      S.hoverPanel.innerHTML = props.join('<br>');
-    }
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!S.inspecting) return;
-    
-    if (isInspectorElement(e.target)) {
-      return;
-    }
-    
-    e.preventDefault();
-    e.stopPropagation();
-    addSelected(getData(e.target));
-    stopInspect();
-  });
-
-  document.addEventListener("keydown", (e) => {
-    if (!S.inspecting) return;
-    
-    if (e.key === "Escape") {
-      e.preventDefault();
-      stopInspect();
-    }
-    
-    if (e.key === "c" || e.key === "C") {
-      const hoveredEl = document.elementFromPoint(e.clientX || 0, e.clientY || 0);
-      if (hoveredEl && !isInspectorElement(hoveredEl)) {
-        e.preventDefault();
-        const data = getData(hoveredEl);
-        navigator.clipboard.writeText(cssText(data));
-        
-        if (S.hoverPanel) {
-          S.hoverPanel.innerHTML = '<div style="color: #4caf50; text-align: center;">✓ CSS Copied!</div>';
-          setTimeout(() => {
-            const currentEl = document.elementFromPoint(e.clientX || 0, e.clientY || 0);
-            if (currentEl && !isInspectorElement(currentEl) && S.inspecting) {
-              const d = getData(currentEl);
-              const props = [];
-              props.push(`<b style="color: #4fc3f7;">${d.selector}</b>`);
-              props.push(`<span style="color: #999;">${d.width} × ${d.height}</span>`);
-              if (d.display !== 'inline') props.push(`display: <span style="color: #f9d71c;">${d.display}</span>`);
-              if (d.position !== 'static') props.push(`position: <span style="color: #f9d71c;">${d.position}</span>`);
-              if (d.margin !== '0px') props.push(`margin: <span style="color: #f6b26b;">${d.margin}</span>`);
-              if (d.padding !== '0px') props.push(`padding: <span style="color: #8bc3f5;">${d.padding}</span>`);
-              if (d.fontSize) props.push(`font: <span style="color: #b5cea8;">${d.fontSize}</span>`);
-              if (d.color && d.color !== 'rgb(0, 0, 0)') props.push(`color: <span style="color: ${d.color};">${d.color}</span>`);
-              S.hoverPanel.innerHTML = props.join('<br>');
-            }
-          }, 800);
-        }
-      }
-    }
-  });
-
-  // Handle scrolling - update box model layers
-  let scrollTimeout;
-  document.addEventListener("scroll", () => {
-    if (!S.inspecting) return;
-    
-    hideBoxModelLayers();
-    
-    clearTimeout(scrollTimeout);
-    scrollTimeout = setTimeout(() => {
-      if (S.inspecting) {
-        const hoveredEl = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
-        if (hoveredEl && !isInspectorElement(hoveredEl)) {
-          updateBoxModelLayers(getData(hoveredEl));
-        }
-      }
-    }, 50);
-  }, true);
+    console.log('[DOM Inspector] Cleanup complete');
+  }
 
   /* ---------------- MESSAGES ---------------- */
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener((msg) => {
-      if (msg.type === "START_INSPECT") startInspect();
-      if (msg.type === "CLEAR_OVERLAY") {
-        stopInspect();
-
-        remove(S.hoverPanel);
-        remove(S.panelContainer);
-        remove(S.inspectBtn);
-        Object.values(S.boxModelLayers).forEach(layer => remove(layer));
-
-        S.hoverPanel = S.panelContainer = S.inspectBtn = null;
-        S.boxModelLayers = {};
-
-        S.selectedItems.forEach(i => remove(i.overlay));
-        S.selectedItems.length = 0;
+      if (msg.type === "START_INSPECT") {
+        startInspect();
+      } else if (msg.type === "CLEAR_OVERLAY") {
+        cleanup();
       }
     });
   }
 
+  // Initialize
+  setState(STATES.IDLE);
   ensureInspectButton();
+  
+  console.log('[DOM Inspector] Initialized successfully');
 })();
