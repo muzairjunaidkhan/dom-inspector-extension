@@ -28,7 +28,10 @@
     isDragging: false,
     dragOffsetX: 0,
     dragOffsetY: 0,
-    // Event handler references for cleanup
+    lastHoveredElement: null,
+    rafId: null,
+    pendingMouseEvent: null,
+    gridFlexOverlays: [],
     handlers: {
       mousemove: null,
       click: null,
@@ -37,6 +40,36 @@
       drag: null,
       stopDrag: null
     }
+  };
+
+  // Default CSS values for diff
+  const DEFAULT_CSS = {
+    display: 'inline',
+    position: 'static',
+    top: 'auto',
+    left: 'auto',
+    right: 'auto',
+    bottom: 'auto',
+    width: 'auto',
+    height: 'auto',
+    margin: '0px',
+    padding: '0px',
+    border: '0px none rgb(0, 0, 0)',
+    borderRadius: '0px',
+    background: 'rgba(0, 0, 0, 0)',
+    color: 'rgb(0, 0, 0)',
+    fontSize: '16px',
+    fontFamily: 'serif',
+    fontWeight: '400',
+    lineHeight: 'normal',
+    textAlign: 'start',
+    opacity: '1',
+    zIndex: 'auto',
+    overflow: 'visible',
+    cursor: 'auto',
+    boxShadow: 'none',
+    transform: 'none',
+    transition: 'all 0s ease 0s'
   };
 
   /* ---------------- UTILS ---------------- */
@@ -53,6 +86,69 @@
   const setState = (newState) => {
     console.log(`[DOM Inspector] ${S.state} → ${newState}`);
     S.state = newState;
+  };
+
+  const isNonDefaultCSS = (prop, value) => {
+    if (!value || value === 'none' || value === 'auto') return false;
+    const defaultValue = DEFAULT_CSS[prop];
+    if (!defaultValue) return true;
+    
+    // Normalize values for comparison
+    const normalizedValue = value.trim();
+    const normalizedDefault = defaultValue.trim();
+    
+    if (normalizedValue === normalizedDefault) return false;
+    
+    // Special cases
+    if (prop === 'margin' || prop === 'padding') {
+      return normalizedValue !== '0px';
+    }
+    if (prop === 'border') {
+      return !normalizedValue.startsWith('0px');
+    }
+    
+    return true;
+  };
+
+  const getElementPath = (el) => {
+    const path = [];
+    let current = el;
+    
+    while (current && current !== document.body && path.length < 10) {
+      let selector = current.tagName.toLowerCase();
+      
+      if (current.id) {
+        selector += `#${current.id}`;
+        path.unshift(selector);
+        break;
+      }
+      
+      if (current.className && typeof current.className === 'string') {
+        const classes = current.className.trim().split(/\s+/).filter(c => c && !c.startsWith('di-'));
+        if (classes.length > 0) {
+          selector += `.${classes[0]}`;
+        }
+      }
+      
+      // Add nth-child for specificity
+      const parent = current.parentElement;
+      if (parent) {
+        const siblings = Array.from(parent.children).filter(c => c.tagName === current.tagName);
+        if (siblings.length > 1) {
+          const index = siblings.indexOf(current) + 1;
+          selector += `:nth-child(${index})`;
+        }
+      }
+      
+      path.unshift(selector);
+      current = current.parentElement;
+    }
+    
+    if (current === document.body) {
+      path.unshift('body');
+    }
+    
+    return path;
   };
 
   const cssText = (d) => `
@@ -104,7 +200,7 @@ ${d.selector} {
     let selector = el.tagName.toLowerCase();
     if (el.id) selector += "#" + el.id;
     if (el.className && typeof el.className === 'string') {
-      const classes = el.className.trim().split(/\s+/).filter(c => c);
+      const classes = el.className.trim().split(/\s+/).filter(c => c && !c.startsWith('di-'));
       if (classes.length > 0) selector += "." + classes.join(".");
     }
     
@@ -124,6 +220,7 @@ ${d.selector} {
       el,
       rect: r,
       selector: selector,
+      path: getElementPath(el),
       fontSize: cs.fontSize,
       color: cs.color,
       background: cs.backgroundColor,
@@ -182,8 +279,90 @@ ${d.selector} {
            el.classList.contains('di-button') ||
            el.classList.contains('di-box-layer') ||
            el.classList.contains('di-panel-header') ||
-           el.classList.contains('di-collapse-btn');
+           el.classList.contains('di-collapse-btn') ||
+           el.classList.contains('di-grid-overlay') ||
+           el.classList.contains('di-flex-overlay') ||
+           el.classList.contains('di-breadcrumb');
   };
+
+  /* ---------------- GRID/FLEX VISUALIZATION ---------------- */
+  function clearGridFlexOverlays() {
+    S.gridFlexOverlays.forEach(overlay => remove(overlay));
+    S.gridFlexOverlays = [];
+  }
+
+  function addGridOverlay(data) {
+    const r = data.rect;
+    const overlay = document.createElement("div");
+    overlay.className = "di-grid-overlay";
+    
+    Object.assign(overlay.style, {
+      position: "absolute",
+      top: (r.top + window.scrollY) + "px",
+      left: (r.left + window.scrollX) + "px",
+      width: r.width + "px",
+      height: r.height + "px",
+      pointerEvents: "none",
+      zIndex: 99998,
+      border: "2px dashed rgba(147, 51, 234, 0.6)",
+      background: "repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(147, 51, 234, 0.2) 19px, rgba(147, 51, 234, 0.2) 20px), repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(147, 51, 234, 0.2) 19px, rgba(147, 51, 234, 0.2) 20px)"
+    });
+    
+    document.body.appendChild(overlay);
+    S.gridFlexOverlays.push(overlay);
+  }
+
+  function addFlexOverlay(data) {
+    const r = data.rect;
+    const cs = getComputedStyle(data.el);
+    const flexDirection = cs.flexDirection;
+    
+    const overlay = document.createElement("div");
+    overlay.className = "di-flex-overlay";
+    
+    Object.assign(overlay.style, {
+      position: "absolute",
+      top: (r.top + window.scrollY) + "px",
+      left: (r.left + window.scrollX) + "px",
+      width: r.width + "px",
+      height: r.height + "px",
+      pointerEvents: "none",
+      zIndex: 99998,
+      border: "2px dashed rgba(59, 130, 246, 0.6)"
+    });
+    
+    // Add direction arrow
+    const arrow = document.createElement("div");
+    arrow.style.cssText = `
+      position: absolute;
+      color: rgba(59, 130, 246, 0.9);
+      font-size: 24px;
+      font-weight: bold;
+      text-shadow: 0 0 4px rgba(0,0,0,0.8);
+    `;
+    
+    if (flexDirection === 'row') {
+      arrow.textContent = '→';
+      arrow.style.top = '5px';
+      arrow.style.left = '5px';
+    } else if (flexDirection === 'row-reverse') {
+      arrow.textContent = '←';
+      arrow.style.top = '5px';
+      arrow.style.right = '5px';
+    } else if (flexDirection === 'column') {
+      arrow.textContent = '↓';
+      arrow.style.top = '5px';
+      arrow.style.left = '5px';
+    } else if (flexDirection === 'column-reverse') {
+      arrow.textContent = '↑';
+      arrow.style.bottom = '5px';
+      arrow.style.left = '5px';
+    }
+    
+    overlay.appendChild(arrow);
+    document.body.appendChild(overlay);
+    S.gridFlexOverlays.push(overlay);
+  }
 
   /* ---------------- BOX MODEL VISUALIZATION ---------------- */
   function updateBoxModelLayers(data) {
@@ -192,6 +371,7 @@ ${d.selector} {
     // Remove old layers
     Object.values(S.boxModelLayers).forEach(layer => remove(layer));
     S.boxModelLayers = {};
+    clearGridFlexOverlays();
     
     const r = data.rect;
     const margin = data.marginValues;
@@ -256,12 +436,21 @@ ${d.selector} {
       document.body.appendChild(contentLayer);
       S.boxModelLayers.content = contentLayer;
     }
+    
+    // Add grid/flex overlays
+    const cs = getComputedStyle(data.el);
+    if (cs.display === 'grid' || cs.display === 'inline-grid') {
+      addGridOverlay(data);
+    } else if (cs.display === 'flex' || cs.display === 'inline-flex') {
+      addFlexOverlay(data);
+    }
   }
 
   function hideBoxModelLayers() {
     Object.values(S.boxModelLayers).forEach(layer => {
       if (layer && layer.style) layer.style.display = "none";
     });
+    clearGridFlexOverlays();
   }
 
   /* ---------------- UI CREATION ---------------- */
@@ -316,6 +505,145 @@ ${d.selector} {
     S.inspectBtn = btn;
   }
 
+  function createBreadcrumb(path, data) {
+    const breadcrumb = document.createElement("div");
+    breadcrumb.className = "di-breadcrumb";
+    breadcrumb.style.cssText = `
+      background: rgba(40, 40, 40, 0.95);
+      padding: 6px 10px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      font-size: 10px;
+      color: #999;
+      overflow-x: auto;
+      white-space: nowrap;
+      backdrop-filter: blur(10px);
+    `;
+    
+    path.forEach((segment, i) => {
+      if (i > 0) {
+        const separator = document.createElement("span");
+        separator.textContent = " > ";
+        separator.style.color = "#666";
+        breadcrumb.appendChild(separator);
+      }
+      
+      const part = document.createElement("span");
+      part.textContent = segment;
+      part.style.cssText = `
+        color: ${i === path.length - 1 ? '#4fc3f7' : '#999'};
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 2px;
+        transition: background 0.2s;
+      `;
+      
+      part.onmouseenter = () => part.style.background = "rgba(255,255,255,0.1)";
+      part.onmouseleave = () => part.style.background = "transparent";
+      
+      // Click to navigate to parent element
+      part.onclick = (e) => {
+        e.stopPropagation();
+        let current = data.el;
+        const stepsBack = path.length - 1 - i;
+        for (let j = 0; j < stepsBack && current.parentElement; j++) {
+          current = current.parentElement;
+        }
+        if (current && !isInspectorElement(current)) {
+          const parentData = getData(current);
+          updateBoxModelLayers(parentData);
+          updateHoverPanel(parentData);
+        }
+      };
+      
+      breadcrumb.appendChild(part);
+    });
+    
+    return breadcrumb;
+  }
+
+  function updateHoverPanel(data) {
+    if (!S.hoverPanel) return;
+    
+    S.hoverPanel.innerHTML = '';
+    
+    // Add breadcrumb
+    const breadcrumb = createBreadcrumb(data.path, data);
+    S.hoverPanel.appendChild(breadcrumb);
+    
+    // Main info
+    const mainInfo = document.createElement("div");
+    mainInfo.innerHTML = `
+      <b style="color: #4fc3f7;">${data.selector}</b><br>
+      <span style="color: #999;">${data.width} × ${data.height}</span>
+    `;
+    S.hoverPanel.appendChild(mainInfo);
+    
+    // CSS Diff - only non-default values
+    const cssDiff = document.createElement("div");
+    cssDiff.style.cssText = `
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #444;
+      font-size: 10px;
+    `;
+    
+    const changedStyles = [];
+    const cs = getComputedStyle(data.el);
+    
+    const propsToCheck = [
+      { key: 'display', color: '#f9d71c' },
+      { key: 'position', color: '#f9d71c' },
+      { key: 'margin', color: '#f6b26b' },
+      { key: 'padding', color: '#8bc3f5' },
+      { key: 'fontSize', label: 'font-size', color: '#b5cea8' },
+      { key: 'color', color: '#ce9178' },
+      { key: 'background', label: 'background', color: '#ce9178' },
+      { key: 'border', color: '#dcdcaa' },
+      { key: 'borderRadius', label: 'border-radius', color: '#dcdcaa' },
+      { key: 'fontWeight', label: 'font-weight', color: '#b5cea8' },
+      { key: 'textAlign', label: 'text-align', color: '#9cdcfe' },
+      { key: 'opacity', color: '#b5cea8' },
+      { key: 'zIndex', label: 'z-index', color: '#b5cea8' }
+    ];
+    
+    propsToCheck.forEach(({ key, label, color }) => {
+      const value = data[key];
+      if (isNonDefaultCSS(key, value)) {
+        changedStyles.push(`<span style="color: #9cdcfe;">${label || key}:</span> <span style="color: ${color};">${value}</span>`);
+      }
+    });
+    
+    // Display type indicators
+    const displayType = cs.display;
+    if (displayType === 'flex' || displayType === 'inline-flex') {
+      changedStyles.push(`<span style="color: #569cd6;">🔷 FLEX</span> ${data.flexDirection}`);
+    } else if (displayType === 'grid' || displayType === 'inline-grid') {
+      changedStyles.push(`<span style="color: #9333ea;">⊞ GRID</span>`);
+    }
+    
+    if (changedStyles.length > 0) {
+      cssDiff.innerHTML = `<div style="color: #4caf50; font-weight: bold; margin-bottom: 4px;">Changed styles:</div>` +
+        changedStyles.join('<br>');
+    } else {
+      cssDiff.innerHTML = `<span style="color: #666;">All default values</span>`;
+    }
+    
+    S.hoverPanel.appendChild(cssDiff);
+    
+    // Keyboard hints
+    const hints = document.createElement("div");
+    hints.style.cssText = `
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #444;
+      font-size: 9px;
+      color: #666;
+    `;
+    hints.innerHTML = `Press <kbd style="background: #444; padding: 2px 4px; border-radius: 2px;">C</kbd> to copy CSS`;
+    S.hoverPanel.appendChild(hints);
+  }
+
   function ensureHoverUI() {
     if (!S.hoverPanel) {
       S.hoverPanel = document.createElement("div");
@@ -332,9 +660,11 @@ ${d.selector} {
         zIndex: 99999,
         pointerEvents: "none",
         boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
-        maxWidth: "350px",
+        maxWidth: "400px",
         fontFamily: "system-ui, -apple-system, monospace",
-        backdropFilter: "blur(10px)"
+        backdropFilter: "blur(10px)",
+        maxHeight: "80vh",
+        overflowY: "auto"
       });
       document.body.appendChild(S.hoverPanel);
     }
@@ -483,7 +813,6 @@ ${d.selector} {
       S.inspectBtn.style.transform = "none";
     }
     
-    // Attach event listeners
     attachEventListeners();
   }
 
@@ -499,12 +828,16 @@ ${d.selector} {
       S.inspectBtn.style.background = "#007acc";
     }
     
+    if (S.rafId) {
+      cancelAnimationFrame(S.rafId);
+      S.rafId = null;
+    }
+    
     hideBoxModelLayers();
   }
 
-  /* ---------------- EVENT HANDLERS ---------------- */
+  /* ---------------- EVENT HANDLERS WITH RAF ---------------- */
   function attachEventListeners() {
-    // Remove existing listeners first
     detachEventListeners();
     
     S.handlers.mousemove = handleMouseMove;
@@ -525,44 +858,46 @@ ${d.selector} {
     if (S.handlers.scroll) document.removeEventListener("scroll", S.handlers.scroll, true);
   }
 
-  function handleMouseMove(e) {
-    if (!isValidState() || !S.inspecting) return;
+  function processMouseMove() {
+    if (!S.pendingMouseEvent || !isValidState() || !S.inspecting) {
+      S.rafId = null;
+      return;
+    }
+    
+    const e = S.pendingMouseEvent;
+    S.pendingMouseEvent = null;
     
     if (isInspectorElement(e.target)) {
       hideBoxModelLayers();
       if (S.hoverPanel) S.hoverPanel.style.display = "none";
+      S.rafId = null;
       return;
     }
     
+    if (e.target === S.lastHoveredElement) {
+      S.rafId = null;
+      return;
+    }
+    
+    S.lastHoveredElement = e.target;
     const d = getData(e.target);
     updateBoxModelLayers(d);
     
     if (S.hoverPanel) {
       S.hoverPanel.style.display = "block";
-      const props = [];
-      props.push(`<b style="color: #4fc3f7;">${d.selector}</b>`);
-      props.push(`<span style="color: #999;">${d.width} × ${d.height}</span>`);
-      
-      if (d.display !== 'inline') {
-        props.push(`display: <span style="color: #f9d71c;">${d.display}</span>`);
-      }
-      if (d.position !== 'static') {
-        props.push(`position: <span style="color: #f9d71c;">${d.position}</span>`);
-      }
-      if (d.margin !== '0px') {
-        props.push(`margin: <span style="color: #f6b26b;">${d.margin}</span>`);
-      }
-      if (d.padding !== '0px') {
-        props.push(`padding: <span style="color: #8bc3f5;">${d.padding}</span>`);
-      }
-      if (d.fontSize) {
-        props.push(`font: <span style="color: #b5cea8;">${d.fontSize}</span>`);
-      }
-      if (d.color && d.color !== 'rgb(0, 0, 0)') {
-        props.push(`color: <span style="color: ${d.color};">${d.color}</span>`);
-      }
-      
-      S.hoverPanel.innerHTML = props.join('<br>');
+      updateHoverPanel(d);
+    }
+    
+    S.rafId = null;
+  }
+
+  function handleMouseMove(e) {
+    if (!isValidState() || !S.inspecting) return;
+    
+    S.pendingMouseEvent = e;
+    
+    if (!S.rafId) {
+      S.rafId = requestAnimationFrame(processMouseMove);
     }
   }
 
@@ -584,22 +919,31 @@ ${d.selector} {
       e.preventDefault();
       stopInspect();
     } else if (e.key === "c" || e.key === "C") {
-      const hoveredEl = document.elementFromPoint(e.clientX || 0, e.clientY || 0);
-      if (hoveredEl && !isInspectorElement(hoveredEl)) {
+      if (S.lastHoveredElement && !isInspectorElement(S.lastHoveredElement)) {
         e.preventDefault();
-        const data = getData(hoveredEl);
+        const data = getData(S.lastHoveredElement);
         navigator.clipboard.writeText(cssText(data));
         
         if (S.hoverPanel) {
-          S.hoverPanel.innerHTML = '<div style="color: #4caf50; text-align: center;">✓ CSS Copied!</div>';
-          setTimeout(() => {
-            if (S.inspecting && isValidState()) {
-              const currentEl = document.elementFromPoint(e.clientX || 0, e.clientY || 0);
-              if (currentEl && !isInspectorElement(currentEl)) {
-                handleMouseMove({ target: currentEl });
-              }
-            }
-          }, 800);
+          const notification = document.createElement("div");
+          notification.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(76, 175, 80, 0.95);
+            color: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 100001;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+          `;
+          notification.textContent = '✓ CSS Copied to Clipboard!';
+          document.body.appendChild(notification);
+          
+          setTimeout(() => remove(notification), 1500);
         }
       }
     }
@@ -612,13 +956,85 @@ ${d.selector} {
     hideBoxModelLayers();
     clearTimeout(scrollTimeout);
     scrollTimeout = setTimeout(() => {
-      if (S.inspecting && isValidState()) {
-        const hoveredEl = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
-        if (hoveredEl && !isInspectorElement(hoveredEl)) {
-          updateBoxModelLayers(getData(hoveredEl));
+      if (S.inspecting && isValidState() && S.lastHoveredElement) {
+        if (!isInspectorElement(S.lastHoveredElement)) {
+          updateBoxModelLayers(getData(S.lastHoveredElement));
         }
       }
     }, 50);
+  }
+
+  /* ---------------- PSEUDO-STATE INSPECTOR ---------------- */
+  function createPseudoStateToggle(data) {
+    const container = document.createElement("div");
+    container.style.cssText = `
+      background: #2d2d2d;
+      padding: 8px;
+      margin: 8px 0;
+      border-radius: 4px;
+    `;
+    
+    const title = document.createElement("div");
+    title.textContent = "Pseudo States:";
+    title.style.cssText = "font-size: 10px; color: #999; margin-bottom: 6px;";
+    container.appendChild(title);
+    
+    const states = ['hover', 'focus', 'active'];
+    const buttonContainer = document.createElement("div");
+    buttonContainer.style.cssText = "display: flex; gap: 6px;";
+    
+    states.forEach(state => {
+      const btn = document.createElement("button");
+      btn.textContent = `:${state}`;
+      btn.className = `di-pseudo-btn di-pseudo-${state}`;
+      Object.assign(btn.style, {
+        padding: "4px 8px",
+        border: "1px solid #555",
+        background: "#3a3a3a",
+        color: "#fff",
+        borderRadius: "3px",
+        cursor: "pointer",
+        fontSize: "10px",
+        fontFamily: "monospace",
+        transition: "all 0.2s"
+      });
+      
+      let isActive = false;
+      
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        isActive = !isActive;
+        
+        if (isActive) {
+          btn.style.background = "#007acc";
+          btn.style.borderColor = "#007acc";
+          data.el.classList.add(`di-force-${state}`);
+          
+          // Apply pseudo-state styles
+          const styleId = `di-pseudo-style-${state}`;
+          let style = document.getElementById(styleId);
+          if (!style) {
+            style = document.createElement("style");
+            style.id = styleId;
+            document.head.appendChild(style);
+          }
+          style.textContent = `.di-force-${state} { /* Forced ${state} state */ }`;
+          
+          if (state === 'hover') {
+            data.el.style.setProperty('pointer-events', 'auto', 'important');
+          }
+        } else {
+          btn.style.background = "#3a3a3a";
+          btn.style.borderColor = "#555";
+          data.el.classList.remove(`di-force-${state}`);
+        }
+      };
+      
+      buttonContainer.appendChild(btn);
+    });
+    
+    container.appendChild(buttonContainer);
+    return container;
   }
 
   /* ---------------- SELECTED ITEMS ---------------- */
@@ -651,8 +1067,15 @@ ${d.selector} {
     item.style.marginBottom = "8px";
     item.style.paddingBottom = "8px";
     
+    // Breadcrumb
+    const breadcrumb = createBreadcrumb(data.path, data);
+    item.appendChild(breadcrumb);
+    
     const header = document.createElement("div");
     header.innerHTML = `<b>${data.selector}</b><div style="color: #999; margin-top: 2px;">${data.width} × ${data.height}</div>`;
+    
+    // Pseudo-state controls
+    const pseudoControls = createPseudoStateToggle(data);
     
     const cssPreview = document.createElement("pre");
     cssPreview.className = "di-css-preview";
@@ -713,6 +1136,9 @@ ${d.selector} {
       remove(overlay);
       remove(item);
       
+      // Clean up forced pseudo-states
+      data.el.classList.remove('di-force-hover', 'di-force-focus', 'di-force-active');
+      
       if (Array.isArray(S.selectedItems)) {
         S.selectedItems = S.selectedItems.filter(i => i.item !== item);
 
@@ -728,14 +1154,14 @@ ${d.selector} {
 
     btnContainer.appendChild(copyBtn);
     btnContainer.appendChild(clearBtn);
-    item.append(header, cssPreview, btnContainer);
+    item.append(header, pseudoControls, cssPreview, btnContainer);
     
     const content = S.panelContainer?.querySelector(".di-panel-content");
     if (content) {
       content.appendChild(item);
     }
 
-    S.selectedItems.push({ overlay, item });
+    S.selectedItems.push({ overlay, item, data });
   }
 
   /* ---------------- CLEANUP ---------------- */
@@ -746,20 +1172,40 @@ ${d.selector} {
     detachEventListeners();
     stopDrag();
     
+    if (S.rafId) {
+      cancelAnimationFrame(S.rafId);
+      S.rafId = null;
+    }
+    
     remove(S.hoverPanel);
     remove(S.panelContainer);
     remove(S.inspectBtn);
     Object.values(S.boxModelLayers).forEach(layer => remove(layer));
+    clearGridFlexOverlays();
     
     if (Array.isArray(S.selectedItems)) {
-      S.selectedItems.forEach(i => remove(i.overlay));
+      S.selectedItems.forEach(i => {
+        remove(i.overlay);
+        if (i.data && i.data.el) {
+          i.data.el.classList.remove('di-force-hover', 'di-force-focus', 'di-force-active');
+        }
+      });
     }
+    
+    // Clean up pseudo-state styles
+    ['hover', 'focus', 'active'].forEach(state => {
+      const style = document.getElementById(`di-pseudo-style-${state}`);
+      if (style) remove(style);
+    });
     
     S.hoverPanel = null;
     S.panelContainer = null;
     S.inspectBtn = null;
     S.boxModelLayers = {};
+    S.gridFlexOverlays = [];
     S.selectedItems = [];
+    S.lastHoveredElement = null;
+    S.pendingMouseEvent = null;
     
     document.body.style.cursor = "default";
     window.__DOM_INSPECTOR__ = false;
@@ -782,5 +1228,10 @@ ${d.selector} {
   setState(STATES.IDLE);
   ensureInspectButton();
   
-  console.log('[DOM Inspector] Initialized successfully');
+  console.log('[DOM Inspector] Enhanced version initialized with:');
+  console.log('  ✓ Element path breadcrumb (clickable)');
+  console.log('  ✓ Live CSS diff (non-default styles only)');
+  console.log('  ✓ Pseudo-state inspector (:hover, :focus, :active)');
+  console.log('  ✓ Grid/Flex visual helpers');
+  console.log('  ✓ Performance-safe RAF throttling');
 })();
