@@ -92,13 +92,13 @@
     if (!value || value === 'none' || value === 'auto') return false;
     const defaultValue = DEFAULT_CSS[prop];
     if (!defaultValue) return true;
-    
+
     // Normalize values for comparison
     const normalizedValue = value.trim();
     const normalizedDefault = defaultValue.trim();
-    
+
     if (normalizedValue === normalizedDefault) return false;
-    
+
     // Special cases
     if (prop === 'margin' || prop === 'padding') {
       return normalizedValue !== '0px';
@@ -106,30 +106,30 @@
     if (prop === 'border') {
       return !normalizedValue.startsWith('0px');
     }
-    
+
     return true;
   };
 
   const getElementPath = (el) => {
     const path = [];
     let current = el;
-    
+
     while (current && current !== document.body && path.length < 10) {
       let selector = current.tagName.toLowerCase();
-      
+
       if (current.id) {
         selector += `#${current.id}`;
         path.unshift(selector);
         break;
       }
-      
+
       if (current.className && typeof current.className === 'string') {
         const classes = current.className.trim().split(/\s+/).filter(c => c && !c.startsWith('di-'));
         if (classes.length > 0) {
           selector += `.${classes[0]}`;
         }
       }
-      
+
       // Add nth-child for specificity
       const parent = current.parentElement;
       if (parent) {
@@ -139,15 +139,15 @@
           selector += `:nth-child(${index})`;
         }
       }
-      
+
       path.unshift(selector);
       current = current.parentElement;
     }
-    
+
     if (current === document.body) {
       path.unshift('body');
     }
-    
+
     return path;
   };
 
@@ -196,14 +196,14 @@ ${d.selector} {
   const getData = (el) => {
     const cs = getComputedStyle(el);
     const r = el.getBoundingClientRect();
-    
+
     let selector = el.tagName.toLowerCase();
     if (el.id) selector += "#" + el.id;
     if (el.className && typeof el.className === 'string') {
       const classes = el.className.trim().split(/\s+/).filter(c => c && !c.startsWith('di-'));
       if (classes.length > 0) selector += "." + classes.join(".");
     }
-    
+
     const parseBox = (str) => {
       const parts = str.split(' ').map(p => parseFloat(p) || 0);
       if (parts.length === 1) return [parts[0], parts[0], parts[0], parts[0]];
@@ -211,11 +211,11 @@ ${d.selector} {
       if (parts.length === 3) return [parts[0], parts[1], parts[2], parts[1]];
       return parts;
     };
-    
+
     const marginValues = parseBox(cs.margin);
     const paddingValues = parseBox(cs.padding);
     const borderValues = parseBox(cs.borderWidth);
-    
+
     return {
       el,
       rect: r,
@@ -267,22 +267,22 @@ ${d.selector} {
 
   const isInspectorElement = (el) => {
     if (!el) return false;
-    return el === S.inspectBtn || 
-           el === S.hoverPanel || 
-           el === S.panelContainer ||
-           (S.panelContainer && S.panelContainer.contains(el)) ||
-           el.classList.contains('di-inspect-btn') ||
-           el.classList.contains('di-hover-panel') ||
-           el.classList.contains('di-selected-panel') ||
-           el.classList.contains('di-selected-overlay') ||
-           el.classList.contains('di-panel-item') ||
-           el.classList.contains('di-button') ||
-           el.classList.contains('di-box-layer') ||
-           el.classList.contains('di-panel-header') ||
-           el.classList.contains('di-collapse-btn') ||
-           el.classList.contains('di-grid-overlay') ||
-           el.classList.contains('di-flex-overlay') ||
-           el.classList.contains('di-breadcrumb');
+    return el === S.inspectBtn ||
+      el === S.hoverPanel ||
+      el === S.panelContainer ||
+      (S.panelContainer && S.panelContainer.contains(el)) ||
+      el.classList.contains('di-inspect-btn') ||
+      el.classList.contains('di-hover-panel') ||
+      el.classList.contains('di-selected-panel') ||
+      el.classList.contains('di-selected-overlay') ||
+      el.classList.contains('di-panel-item') ||
+      el.classList.contains('di-button') ||
+      el.classList.contains('di-box-layer') ||
+      el.classList.contains('di-panel-header') ||
+      el.classList.contains('di-collapse-btn') ||
+      el.classList.contains('di-grid-overlay') ||
+      el.classList.contains('di-flex-overlay') ||
+      el.classList.contains('di-breadcrumb');
   };
 
   /* ---------------- GRID/FLEX VISUALIZATION ---------------- */
@@ -295,7 +295,7 @@ ${d.selector} {
     const r = data.rect;
     const overlay = document.createElement("div");
     overlay.className = "di-grid-overlay";
-    
+
     Object.assign(overlay.style, {
       position: "absolute",
       top: (r.top + window.scrollY) + "px",
@@ -307,7 +307,7 @@ ${d.selector} {
       border: "2px dashed rgba(147, 51, 234, 0.6)",
       background: "repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(147, 51, 234, 0.2) 19px, rgba(147, 51, 234, 0.2) 20px), repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(147, 51, 234, 0.2) 19px, rgba(147, 51, 234, 0.2) 20px)"
     });
-    
+
     document.body.appendChild(overlay);
     S.gridFlexOverlays.push(overlay);
   }
@@ -316,10 +316,10 @@ ${d.selector} {
     const r = data.rect;
     const cs = getComputedStyle(data.el);
     const flexDirection = cs.flexDirection;
-    
+
     const overlay = document.createElement("div");
     overlay.className = "di-flex-overlay";
-    
+
     Object.assign(overlay.style, {
       position: "absolute",
       top: (r.top + window.scrollY) + "px",
@@ -330,7 +330,7 @@ ${d.selector} {
       zIndex: 99998,
       border: "2px dashed rgba(59, 130, 246, 0.6)"
     });
-    
+
     // Add direction arrow
     const arrow = document.createElement("div");
     arrow.style.cssText = `
@@ -340,7 +340,7 @@ ${d.selector} {
       font-weight: bold;
       text-shadow: 0 0 4px rgba(0,0,0,0.8);
     `;
-    
+
     if (flexDirection === 'row') {
       arrow.textContent = '→';
       arrow.style.top = '5px';
@@ -358,7 +358,7 @@ ${d.selector} {
       arrow.style.bottom = '5px';
       arrow.style.left = '5px';
     }
-    
+
     overlay.appendChild(arrow);
     document.body.appendChild(overlay);
     S.gridFlexOverlays.push(overlay);
@@ -367,17 +367,17 @@ ${d.selector} {
   /* ---------------- BOX MODEL VISUALIZATION ---------------- */
   function updateBoxModelLayers(data) {
     if (!isValidState()) return;
-    
+
     // Remove old layers
     Object.values(S.boxModelLayers).forEach(layer => remove(layer));
     S.boxModelLayers = {};
     clearGridFlexOverlays();
-    
+
     const r = data.rect;
     const margin = data.marginValues;
     const padding = data.paddingValues;
     const border = data.borderValues;
-    
+
     // Margin layer (orange/tan)
     const marginLayer = document.createElement("div");
     marginLayer.className = "di-box-layer";
@@ -395,7 +395,7 @@ ${d.selector} {
     });
     document.body.appendChild(marginLayer);
     S.boxModelLayers.margin = marginLayer;
-    
+
     // Border layer (yellow/gold)
     const borderLayer = document.createElement("div");
     borderLayer.className = "di-box-layer";
@@ -413,11 +413,11 @@ ${d.selector} {
     });
     document.body.appendChild(borderLayer);
     S.boxModelLayers.border = borderLayer;
-    
+
     // Content layer (blue)
     const contentWidth = r.width - border[1] - border[3] - padding[1] - padding[3];
     const contentHeight = r.height - border[0] - border[2] - padding[0] - padding[2];
-    
+
     if (contentWidth > 0 && contentHeight > 0) {
       const contentLayer = document.createElement("div");
       contentLayer.className = "di-box-layer";
@@ -436,7 +436,7 @@ ${d.selector} {
       document.body.appendChild(contentLayer);
       S.boxModelLayers.content = contentLayer;
     }
-    
+
     // Add grid/flex overlays
     const cs = getComputedStyle(data.el);
     if (cs.display === 'grid' || cs.display === 'inline-grid') {
@@ -478,7 +478,7 @@ ${d.selector} {
       boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
       transition: "all 0.2s"
     });
-    
+
     btn.onmouseenter = () => {
       if (S.state === STATES.IDLE) {
         btn.style.background = "#005a9e";
@@ -486,7 +486,7 @@ ${d.selector} {
         btn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
       }
     };
-    
+
     btn.onmouseleave = () => {
       if (S.state === STATES.IDLE) {
         btn.style.background = "#007acc";
@@ -494,7 +494,7 @@ ${d.selector} {
         btn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
       }
     };
-    
+
     btn.onclick = (e) => {
       e.stopPropagation();
       if (S.state === STATES.IDLE || S.state === STATES.SELECTED) {
@@ -519,7 +519,7 @@ ${d.selector} {
       white-space: nowrap;
       backdrop-filter: blur(10px);
     `;
-    
+
     path.forEach((segment, i) => {
       if (i > 0) {
         const separator = document.createElement("span");
@@ -527,7 +527,7 @@ ${d.selector} {
         separator.style.color = "#666";
         breadcrumb.appendChild(separator);
       }
-      
+
       const part = document.createElement("span");
       part.textContent = segment;
       part.style.cssText = `
@@ -537,10 +537,10 @@ ${d.selector} {
         border-radius: 2px;
         transition: background 0.2s;
       `;
-      
+
       part.onmouseenter = () => part.style.background = "rgba(255,255,255,0.1)";
       part.onmouseleave = () => part.style.background = "transparent";
-      
+
       // Click to navigate to parent element
       part.onclick = (e) => {
         e.stopPropagation();
@@ -555,22 +555,22 @@ ${d.selector} {
           updateHoverPanel(parentData);
         }
       };
-      
+
       breadcrumb.appendChild(part);
     });
-    
+
     return breadcrumb;
   }
 
   function updateHoverPanel(data) {
     if (!S.hoverPanel) return;
-    
+
     S.hoverPanel.innerHTML = '';
-    
+
     // Add breadcrumb
     const breadcrumb = createBreadcrumb(data.path, data);
     S.hoverPanel.appendChild(breadcrumb);
-    
+
     // Main info
     const mainInfo = document.createElement("div");
     mainInfo.innerHTML = `
@@ -578,7 +578,7 @@ ${d.selector} {
       <span style="color: #999;">${data.width} × ${data.height}</span>
     `;
     S.hoverPanel.appendChild(mainInfo);
-    
+
     // CSS Diff - only non-default values
     const cssDiff = document.createElement("div");
     cssDiff.style.cssText = `
@@ -587,10 +587,10 @@ ${d.selector} {
       border-top: 1px solid #444;
       font-size: 10px;
     `;
-    
+
     const changedStyles = [];
     const cs = getComputedStyle(data.el);
-    
+
     const propsToCheck = [
       { key: 'display', color: '#f9d71c' },
       { key: 'position', color: '#f9d71c' },
@@ -606,14 +606,14 @@ ${d.selector} {
       { key: 'opacity', color: '#b5cea8' },
       { key: 'zIndex', label: 'z-index', color: '#b5cea8' }
     ];
-    
+
     propsToCheck.forEach(({ key, label, color }) => {
       const value = data[key];
       if (isNonDefaultCSS(key, value)) {
         changedStyles.push(`<span style="color: #9cdcfe;">${label || key}:</span> <span style="color: ${color};">${value}</span>`);
       }
     });
-    
+
     // Display type indicators
     const displayType = cs.display;
     if (displayType === 'flex' || displayType === 'inline-flex') {
@@ -621,16 +621,16 @@ ${d.selector} {
     } else if (displayType === 'grid' || displayType === 'inline-grid') {
       changedStyles.push(`<span style="color: #9333ea;">⊞ GRID</span>`);
     }
-    
+
     if (changedStyles.length > 0) {
       cssDiff.innerHTML = `<div style="color: #4caf50; font-weight: bold; margin-bottom: 4px;">Changed styles:</div>` +
         changedStyles.join('<br>');
     } else {
       cssDiff.innerHTML = `<span style="color: #666;">All default values</span>`;
     }
-    
+
     S.hoverPanel.appendChild(cssDiff);
-    
+
     // Keyboard hints
     const hints = document.createElement("div");
     hints.style.cssText = `
@@ -674,10 +674,10 @@ ${d.selector} {
     if (!S.panelContainer) {
       S.panelContainer = document.createElement("div");
       S.panelContainer.className = "di-selected-panel";
-      
+
       const startX = S.panelX !== null ? S.panelX : window.innerWidth - 330;
       const startY = S.panelY !== null ? S.panelY : 10;
-      
+
       Object.assign(S.panelContainer.style, {
         position: "fixed",
         top: startY + "px",
@@ -693,7 +693,7 @@ ${d.selector} {
         fontFamily: "system-ui, -apple-system, sans-serif",
         backdropFilter: "blur(10px)"
       });
-      
+
       const header = document.createElement("div");
       header.className = "di-panel-header";
       Object.assign(header.style, {
@@ -706,11 +706,11 @@ ${d.selector} {
         alignItems: "center",
         userSelect: "none"
       });
-      
+
       const title = document.createElement("span");
       title.textContent = "Selected Elements";
       title.style.fontWeight = "bold";
-      
+
       const collapseBtn = document.createElement("button");
       collapseBtn.className = "di-collapse-btn";
       collapseBtn.textContent = "−";
@@ -723,15 +723,15 @@ ${d.selector} {
         padding: "0 6px",
         lineHeight: "1"
       });
-      
+
       collapseBtn.onclick = (e) => {
         e.stopPropagation();
         togglePanelCollapse();
       };
-      
+
       header.appendChild(title);
       header.appendChild(collapseBtn);
-      
+
       const content = document.createElement("div");
       content.className = "di-panel-content";
       Object.assign(content.style, {
@@ -739,12 +739,12 @@ ${d.selector} {
         overflow: "auto",
         padding: "10px"
       });
-      
+
       S.panelContainer.appendChild(header);
       S.panelContainer.appendChild(content);
-      
+
       header.addEventListener("mousedown", startDrag);
-      
+
       document.body.appendChild(S.panelContainer);
     }
   }
@@ -753,7 +753,7 @@ ${d.selector} {
     S.panelCollapsed = !S.panelCollapsed;
     const content = S.panelContainer?.querySelector(".di-panel-content");
     const collapseBtn = S.panelContainer?.querySelector(".di-collapse-btn");
-    
+
     if (content && collapseBtn) {
       if (S.panelCollapsed) {
         content.style.display = "none";
@@ -771,7 +771,7 @@ ${d.selector} {
     const rect = S.panelContainer.getBoundingClientRect();
     S.dragOffsetX = e.clientX - rect.left;
     S.dragOffsetY = e.clientY - rect.top;
-    
+
     S.handlers.drag = drag;
     S.handlers.stopDrag = stopDrag;
     document.addEventListener("mousemove", S.handlers.drag);
@@ -780,13 +780,13 @@ ${d.selector} {
 
   function drag(e) {
     if (!S.isDragging || !S.panelContainer) return;
-    
+
     const x = e.clientX - S.dragOffsetX;
     const y = e.clientY - S.dragOffsetY;
-    
+
     S.panelX = Math.max(0, Math.min(x, window.innerWidth - S.panelContainer.offsetWidth));
     S.panelY = Math.max(0, Math.min(y, window.innerHeight - 50));
-    
+
     S.panelContainer.style.left = S.panelX + "px";
     S.panelContainer.style.top = S.panelY + "px";
   }
@@ -800,51 +800,51 @@ ${d.selector} {
   /* ---------------- INSPECT FLOW ---------------- */
   function startInspect() {
     if (!isValidState() || S.state === STATES.INSPECTING) return;
-    
+
     setState(STATES.INSPECTING);
     S.inspecting = true;
     document.body.style.cursor = "crosshair";
     ensureInspectButton();
     ensureHoverUI();
-    
+
     if (S.inspectBtn) {
       S.inspectBtn.textContent = "Inspecting... (Esc to exit)";
       S.inspectBtn.style.background = "#ff6600";
       S.inspectBtn.style.transform = "none";
     }
-    
+
     attachEventListeners();
   }
 
   function stopInspect() {
     if (!isValidState()) return;
-    
+
     setState(S.selectedItems.length > 0 ? STATES.SELECTED : STATES.IDLE);
     S.inspecting = false;
     document.body.style.cursor = "default";
-    
+
     if (S.inspectBtn) {
       S.inspectBtn.textContent = "Inspect";
       S.inspectBtn.style.background = "#007acc";
     }
-    
+
     if (S.rafId) {
       cancelAnimationFrame(S.rafId);
       S.rafId = null;
     }
-    
+
     hideBoxModelLayers();
   }
 
   /* ---------------- EVENT HANDLERS WITH RAF ---------------- */
   function attachEventListeners() {
     detachEventListeners();
-    
+
     S.handlers.mousemove = handleMouseMove;
     S.handlers.click = handleClick;
     S.handlers.keydown = handleKeyDown;
     S.handlers.scroll = handleScroll;
-    
+
     document.addEventListener("mousemove", S.handlers.mousemove);
     document.addEventListener("click", S.handlers.click, true);
     document.addEventListener("keydown", S.handlers.keydown);
@@ -863,39 +863,39 @@ ${d.selector} {
       S.rafId = null;
       return;
     }
-    
+
     const e = S.pendingMouseEvent;
     S.pendingMouseEvent = null;
-    
+
     if (isInspectorElement(e.target)) {
       hideBoxModelLayers();
       if (S.hoverPanel) S.hoverPanel.style.display = "none";
       S.rafId = null;
       return;
     }
-    
+
     if (e.target === S.lastHoveredElement) {
       S.rafId = null;
       return;
     }
-    
+
     S.lastHoveredElement = e.target;
     const d = getData(e.target);
     updateBoxModelLayers(d);
-    
+
     if (S.hoverPanel) {
       S.hoverPanel.style.display = "block";
       updateHoverPanel(d);
     }
-    
+
     S.rafId = null;
   }
 
   function handleMouseMove(e) {
     if (!isValidState() || !S.inspecting) return;
-    
+
     S.pendingMouseEvent = e;
-    
+
     if (!S.rafId) {
       S.rafId = requestAnimationFrame(processMouseMove);
     }
@@ -903,9 +903,9 @@ ${d.selector} {
 
   function handleClick(e) {
     if (!isValidState() || !S.inspecting) return;
-    
+
     if (isInspectorElement(e.target)) return;
-    
+
     e.preventDefault();
     e.stopPropagation();
     addSelected(getData(e.target));
@@ -914,7 +914,7 @@ ${d.selector} {
 
   function handleKeyDown(e) {
     if (!isValidState() || !S.inspecting) return;
-    
+
     if (e.key === "Escape") {
       e.preventDefault();
       stopInspect();
@@ -923,7 +923,7 @@ ${d.selector} {
         e.preventDefault();
         const data = getData(S.lastHoveredElement);
         navigator.clipboard.writeText(cssText(data));
-        
+
         if (S.hoverPanel) {
           const notification = document.createElement("div");
           notification.style.cssText = `
@@ -942,7 +942,7 @@ ${d.selector} {
           `;
           notification.textContent = '✓ CSS Copied to Clipboard!';
           document.body.appendChild(notification);
-          
+
           setTimeout(() => remove(notification), 1500);
         }
       }
@@ -952,7 +952,7 @@ ${d.selector} {
   let scrollTimeout;
   function handleScroll() {
     if (!isValidState() || !S.inspecting) return;
-    
+
     hideBoxModelLayers();
     clearTimeout(scrollTimeout);
     scrollTimeout = setTimeout(() => {
@@ -973,16 +973,16 @@ ${d.selector} {
       margin: 8px 0;
       border-radius: 4px;
     `;
-    
+
     const title = document.createElement("div");
     title.textContent = "Pseudo States:";
     title.style.cssText = "font-size: 10px; color: #999; margin-bottom: 6px;";
     container.appendChild(title);
-    
+
     const states = ['hover', 'focus', 'active'];
     const buttonContainer = document.createElement("div");
     buttonContainer.style.cssText = "display: flex; gap: 6px;";
-    
+
     states.forEach(state => {
       const btn = document.createElement("button");
       btn.textContent = `:${state}`;
@@ -998,18 +998,18 @@ ${d.selector} {
         fontFamily: "monospace",
         transition: "all 0.2s"
       });
-      
+
       let isActive = false;
-      
+
       btn.onclick = (e) => {
         e.stopPropagation();
         isActive = !isActive;
-        
+
         if (isActive) {
           btn.style.background = "#007acc";
           btn.style.borderColor = "#007acc";
           data.el.classList.add(`di-force-${state}`);
-          
+
           // Apply pseudo-state styles
           const styleId = `di-pseudo-style-${state}`;
           let style = document.getElementById(styleId);
@@ -1019,7 +1019,7 @@ ${d.selector} {
             document.head.appendChild(style);
           }
           style.textContent = `.di-force-${state} { /* Forced ${state} state */ }`;
-          
+
           if (state === 'hover') {
             data.el.style.setProperty('pointer-events', 'auto', 'important');
           }
@@ -1029,10 +1029,10 @@ ${d.selector} {
           data.el.classList.remove(`di-force-${state}`);
         }
       };
-      
+
       buttonContainer.appendChild(btn);
     });
-    
+
     container.appendChild(buttonContainer);
     return container;
   }
@@ -1042,7 +1042,7 @@ ${d.selector} {
     if (!isValidState() || !Array.isArray(S.selectedItems)) {
       S.selectedItems = [];
     }
-    
+
     ensurePanelContainer();
 
     const overlay = document.createElement("div");
@@ -1066,17 +1066,17 @@ ${d.selector} {
     item.style.borderBottom = "1px solid #444";
     item.style.marginBottom = "8px";
     item.style.paddingBottom = "8px";
-    
+
     // Breadcrumb
     const breadcrumb = createBreadcrumb(data.path, data);
     item.appendChild(breadcrumb);
-    
+
     const header = document.createElement("div");
     header.innerHTML = `<b>${data.selector}</b><div style="color: #999; margin-top: 2px;">${data.width} × ${data.height}</div>`;
-    
+
     // Pseudo-state controls
     const pseudoControls = createPseudoStateToggle(data);
-    
+
     const cssPreview = document.createElement("pre");
     cssPreview.className = "di-css-preview";
     cssPreview.style.cssText = `
@@ -1096,7 +1096,7 @@ ${d.selector} {
     const btnContainer = document.createElement("div");
     btnContainer.style.display = "flex";
     btnContainer.style.gap = "6px";
-    
+
     const copyBtn = document.createElement("button");
     copyBtn.className = "di-button di-copy-btn";
     copyBtn.textContent = "Copy CSS";
@@ -1126,7 +1126,7 @@ ${d.selector} {
     copyBtn.style.color = "#fff";
     clearBtn.style.background = "#cc0000";
     clearBtn.style.color = "#fff";
-    
+
     copyBtn.onmouseenter = () => copyBtn.style.background = "#005a9e";
     copyBtn.onmouseleave = () => copyBtn.style.background = "#007acc";
     clearBtn.onmouseenter = () => clearBtn.style.background = "#990000";
@@ -1135,10 +1135,10 @@ ${d.selector} {
     clearBtn.onclick = () => {
       remove(overlay);
       remove(item);
-      
+
       // Clean up forced pseudo-states
       data.el.classList.remove('di-force-hover', 'di-force-focus', 'di-force-active');
-      
+
       if (Array.isArray(S.selectedItems)) {
         S.selectedItems = S.selectedItems.filter(i => i.item !== item);
 
@@ -1155,7 +1155,7 @@ ${d.selector} {
     btnContainer.appendChild(copyBtn);
     btnContainer.appendChild(clearBtn);
     item.append(header, pseudoControls, cssPreview, btnContainer);
-    
+
     const content = S.panelContainer?.querySelector(".di-panel-content");
     if (content) {
       content.appendChild(item);
@@ -1168,21 +1168,21 @@ ${d.selector} {
   function cleanup() {
     console.log('[DOM Inspector] Cleaning up...');
     setState(STATES.CLEANING);
-    
+
     detachEventListeners();
     stopDrag();
-    
+
     if (S.rafId) {
       cancelAnimationFrame(S.rafId);
       S.rafId = null;
     }
-    
+
     remove(S.hoverPanel);
     remove(S.panelContainer);
     remove(S.inspectBtn);
     Object.values(S.boxModelLayers).forEach(layer => remove(layer));
     clearGridFlexOverlays();
-    
+
     if (Array.isArray(S.selectedItems)) {
       S.selectedItems.forEach(i => {
         remove(i.overlay);
@@ -1191,13 +1191,13 @@ ${d.selector} {
         }
       });
     }
-    
+
     // Clean up pseudo-state styles
     ['hover', 'focus', 'active'].forEach(state => {
       const style = document.getElementById(`di-pseudo-style-${state}`);
       if (style) remove(style);
     });
-    
+
     S.hoverPanel = null;
     S.panelContainer = null;
     S.inspectBtn = null;
@@ -1206,10 +1206,10 @@ ${d.selector} {
     S.selectedItems = [];
     S.lastHoveredElement = null;
     S.pendingMouseEvent = null;
-    
+
     document.body.style.cursor = "default";
     window.__DOM_INSPECTOR__ = false;
-    
+
     console.log('[DOM Inspector] Cleanup complete');
   }
 
@@ -1227,7 +1227,7 @@ ${d.selector} {
   // Initialize
   setState(STATES.IDLE);
   ensureInspectButton();
-  
+
   console.log('[DOM Inspector] Enhanced version initialized with:');
   console.log('  ✓ Element path breadcrumb (clickable)');
   console.log('  ✓ Live CSS diff (non-default styles only)');
