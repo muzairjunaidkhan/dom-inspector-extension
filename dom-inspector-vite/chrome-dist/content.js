@@ -34,6 +34,12 @@
     gridFlexOverlays: [],
     scrollTimeout: null,
     resizeObserver: null,
+    currentViewport: { width: window.innerWidth, height: window.innerHeight, name: 'Current' },
+    responsiveMode: false,
+    responsivePanel: null,
+    viewportFrame: null,
+    iframeHandlers: null,
+    originalViewportMeta: undefined,
     handlers: {
       mousemove: null,
       click: null,
@@ -46,7 +52,20 @@
   // Cache for element data to reduce recalculations
   const elementDataCache = new Map();
   let cacheInvalidationFrame = null;
-
+  // Responsive viewport presets
+  const viewportPresets = [
+    { name: 'iPhone SE', width: 375, height: 667, type: 'mobile' },
+    { name: 'iPhone 12/13', width: 390, height: 844, type: 'mobile' },
+    { name: 'iPhone 14 Pro Max', width: 430, height: 932, type: 'mobile' },
+    { name: 'Samsung Galaxy S21', width: 360, height: 800, type: 'mobile' },
+    { name: 'iPad Mini', width: 768, height: 1024, type: 'tablet' },
+    { name: 'iPad Air', width: 820, height: 1180, type: 'tablet' },
+    { name: 'iPad Pro 12.9"', width: 1024, height: 1366, type: 'tablet' },
+    { name: 'Desktop Small', width: 1366, height: 768, type: 'desktop' },
+    { name: 'Desktop Medium', width: 1920, height: 1080, type: 'desktop' },
+    { name: 'Desktop Large', width: 2560, height: 1440, type: 'desktop' },
+    { name: 'Custom', width: 0, height: 0, type: 'custom' }
+  ];
   // Default CSS values for diff
   const DEFAULT_CSS = {
     display: 'inline',
@@ -77,7 +96,7 @@
     transition: 'all 0s ease 0s'
   };
 
-  /* ---------------- UTILS ---------------- */
+  /*  UTILS  */
   const remove = (el) => {
     if (el && el.parentNode) {
       el.parentNode.removeChild(el);
@@ -308,7 +327,7 @@ ${d.selector} {
       el.classList.contains('di-breadcrumb');
   };
 
-  /* ---------------- GRID/FLEX VISUALIZATION ---------------- */
+  /*  GRID/FLEX VISUALIZATION  */
   function clearGridFlexOverlays() {
     S.gridFlexOverlays.forEach(overlay => remove(overlay));
     S.gridFlexOverlays = [];
@@ -387,7 +406,7 @@ ${d.selector} {
     S.gridFlexOverlays.push(overlay);
   }
 
-  /* ---------------- BOX MODEL VISUALIZATION ---------------- */
+  /*  BOX MODEL VISUALIZATION  */
   function updateBoxModelLayers(data) {
     if (!isValidState()) return;
 
@@ -401,17 +420,18 @@ ${d.selector} {
     const padding = data.paddingValues;
     const border = data.borderValues;
 
-    // Margin layer (orange/tan)
+    // Margin layer (Warm Orange - suggests "space outside")
     const marginLayer = document.createElement("div");
-    marginLayer.className = "di-box-layer";
+    marginLayer.className = "di-box-layer di-box-margin";
     Object.assign(marginLayer.style, {
       position: "absolute",
       top: (r.top + window.scrollY - margin[0]) + "px",
       left: (r.left + window.scrollX - margin[3]) + "px",
       width: (r.width + margin[1] + margin[3]) + "px",
       height: (r.height + margin[0] + margin[2]) + "px",
-      background: "rgba(246, 178, 107, 0.35)",
-      border: "1px solid rgba(246, 178, 107, 0.9)",
+      background: "rgba(255, 152, 0, 0.25)", // Warm orange - external spacing
+      border: "1px dashed rgba(255, 152, 0, 0.8)",
+      boxShadow: "inset 0 0 0 1px rgba(255, 152, 0, 0.15)",
       zIndex: 99995,
       pointerEvents: "none",
       boxSizing: "border-box"
@@ -419,17 +439,18 @@ ${d.selector} {
     document.body.appendChild(marginLayer);
     S.boxModelLayers.margin = marginLayer;
 
-    // Border layer (yellow/gold)
+    // Border layer (Golden Yellow - suggests "boundary/frame")
     const borderLayer = document.createElement("div");
-    borderLayer.className = "di-box-layer";
+    borderLayer.className = "di-box-layer di-box-border";
     Object.assign(borderLayer.style, {
       position: "absolute",
       top: (r.top + window.scrollY) + "px",
       left: (r.left + window.scrollX) + "px",
       width: r.width + "px",
       height: r.height + "px",
-      background: "rgba(255, 229, 153, 0.35)",
-      border: "1px solid rgba(255, 229, 153, 0.9)",
+      background: "rgba(255, 235, 59, 0.25)", // Golden yellow - protective boundary
+      border: "1px solid rgba(255, 235, 59, 0.9)",
+      boxShadow: "inset 0 0 0 1px rgba(255, 235, 59, 0.2)",
       zIndex: 99996,
       pointerEvents: "none",
       boxSizing: "border-box"
@@ -437,22 +458,47 @@ ${d.selector} {
     document.body.appendChild(borderLayer);
     S.boxModelLayers.border = borderLayer;
 
-    // Content layer (blue)
+    // Padding layer (Soft Green - suggests "internal breathing room")
+    const paddingWidth = r.width - border[1] - border[3];
+    const paddingHeight = r.height - border[0] - border[2];
+
+    if (paddingWidth > 0 && paddingHeight > 0) {
+      const paddingLayer = document.createElement("div");
+      paddingLayer.className = "di-box-layer di-box-padding";
+      Object.assign(paddingLayer.style, {
+        position: "absolute",
+        top: (r.top + window.scrollY + border[0]) + "px",
+        left: (r.left + window.scrollX + border[3]) + "px",
+        width: paddingWidth + "px",
+        height: paddingHeight + "px",
+        background: "rgba(139, 195, 74, 0.25)", // Soft green - comfortable internal space
+        border: "1px dotted rgba(139, 195, 74, 0.8)",
+        boxShadow: "inset 0 0 0 1px rgba(139, 195, 74, 0.15)",
+        zIndex: 99997,
+        pointerEvents: "none",
+        boxSizing: "border-box"
+      });
+      document.body.appendChild(paddingLayer);
+      S.boxModelLayers.padding = paddingLayer;
+    }
+
+    // Content layer (Cool Blue - suggests "core/content area")
     const contentWidth = r.width - border[1] - border[3] - padding[1] - padding[3];
     const contentHeight = r.height - border[0] - border[2] - padding[0] - padding[2];
 
     if (contentWidth > 0 && contentHeight > 0) {
       const contentLayer = document.createElement("div");
-      contentLayer.className = "di-box-layer";
+      contentLayer.className = "di-box-layer di-box-content";
       Object.assign(contentLayer.style, {
         position: "absolute",
         top: (r.top + window.scrollY + border[0] + padding[0]) + "px",
         left: (r.left + window.scrollX + border[3] + padding[3]) + "px",
         width: contentWidth + "px",
         height: contentHeight + "px",
-        background: "rgba(139, 195, 245, 0.35)",
-        border: "1px solid rgba(139, 195, 245, 0.9)",
-        zIndex: 99997,
+        background: "rgba(33, 150, 243, 0.30)", // Cool blue - trustworthy content area
+        border: "2px solid rgba(33, 150, 243, 0.95)",
+        boxShadow: "inset 0 0 0 1px rgba(33, 150, 243, 0.2), 0 0 8px rgba(33, 150, 243, 0.3)",
+        zIndex: 99998,
         pointerEvents: "none",
         boxSizing: "border-box"
       });
@@ -476,10 +522,11 @@ ${d.selector} {
     clearGridFlexOverlays();
   }
 
-  /* ---------------- UI CREATION ---------------- */
+  /*  UI CREATION  */
   function ensureInspectButton() {
     if (S.inspectBtn) return;
 
+    // Existing inspect button code...
     const btn = document.createElement("button");
     btn.id = "dom-inspector-btn";
     btn.className = "di-inspect-btn";
@@ -526,6 +573,56 @@ ${d.selector} {
     };
     document.body.appendChild(btn);
     S.inspectBtn = btn;
+
+    // ADD RESPONSIVE MODE BUTTON
+    const responsiveBtn = document.createElement("button");
+    responsiveBtn.id = "dom-responsive-btn";
+    responsiveBtn.className = "di-responsive-btn";
+    responsiveBtn.textContent = "📱 Responsive";
+    Object.assign(responsiveBtn.style, {
+      position: "fixed",
+      bottom: "20px",
+      right: "110px", // Position to the left of inspect button
+      zIndex: 100000,
+      padding: "10px 14px",
+      background: "#6f42c1",
+      color: "#fff",
+      border: "none",
+      borderRadius: "6px",
+      cursor: "pointer",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      fontSize: "13px",
+      fontWeight: "500",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+      transition: "all 0.2s"
+    });
+
+    responsiveBtn.onmouseenter = () => {
+      responsiveBtn.style.background = "#5a32a3";
+      responsiveBtn.style.transform = "translateY(-1px)";
+      responsiveBtn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
+    };
+
+    responsiveBtn.onmouseleave = () => {
+      responsiveBtn.style.background = "#6f42c1";
+      responsiveBtn.style.transform = "translateY(0)";
+      responsiveBtn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
+    };
+
+    responsiveBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (!S.responsiveMode) {
+        enterResponsiveMode();
+        responsiveBtn.textContent = "❌ Exit Responsive";
+        responsiveBtn.style.background = "#dc3545";
+      } else {
+        exitResponsiveMode();
+        responsiveBtn.textContent = "📱 Responsive";
+        responsiveBtn.style.background = "#6f42c1";
+      }
+    };
+
+    document.body.appendChild(responsiveBtn);
   }
 
   function createBreadcrumb(path, data) {
@@ -881,7 +978,7 @@ ${d.selector} {
     if (S.handlers.stopDrag) document.removeEventListener("mouseup", S.handlers.stopDrag);
   }
 
-  /* ---------------- INSPECT FLOW ---------------- */
+  /*  INSPECT FLOW  */
   function startInspect() {
     if (!isValidState() || S.state === STATES.INSPECTING) return;
 
@@ -897,7 +994,14 @@ ${d.selector} {
       S.inspectBtn.style.transform = "none";
     }
     initializeResizeObserver();
-    attachEventListeners();
+    // attachEventListeners();
+
+    // NEW: Enable iframe inspector if in responsive mode
+    if (S.responsiveMode && S.viewportFrame?.iframe) {
+      enableIframeInspector();
+    } else {
+      attachEventListeners();
+    }
   }
 
   function stopInspect() {
@@ -926,7 +1030,7 @@ ${d.selector} {
     S.lastHoveredElement = null;
   }
 
-  /* ---------------- EVENT HANDLERS WITH RAF ---------------- */
+  /*  EVENT HANDLERS WITH RAF  */
   function attachEventListeners() {
     detachEventListeners();
 
@@ -1080,7 +1184,1152 @@ ${d.selector} {
     S.resizeObserver.observe(document.body);
   }
 
-  /* ---------------- PSEUDO-STATE INSPECTOR ---------------- */
+
+
+  // NEW RESPONSIVE DESIGN TESTING
+  function createViewportFrame() {
+    if (S.viewportFrame) return;
+
+    // Background overlay
+    const overlay = document.createElement("div");
+    overlay.className = "di-viewport-overlay";
+    Object.assign(overlay.style, {
+      position: "fixed",
+      top: "0",
+      left: "0",
+      width: "100%",
+      height: "100%",
+      background: "#1e1e1e",
+      zIndex: 99990,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden"
+    });
+
+    // Device frame container
+    const frameContainer = document.createElement("div");
+    frameContainer.className = "di-frame-container";
+    Object.assign(frameContainer.style, {
+      position: "relative",
+      background: "#000",
+      borderRadius: "12px",
+      padding: "60px 20px 60px 20px", // Space for device chrome
+      boxShadow: "0 20px 60px rgba(0,0,0,0.8)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center"
+    });
+
+    // Iframe for content isolation
+    const iframe = document.createElement("iframe");
+    iframe.className = "di-viewport-iframe";
+    Object.assign(iframe.style, {
+      border: "none",
+      background: "#fff",
+      display: "block",
+      borderRadius: "4px"
+    });
+
+    frameContainer.appendChild(iframe);
+    overlay.appendChild(frameContainer);
+
+    // Toolbar with controls
+    const toolbar = document.createElement("div");
+    toolbar.className = "di-viewport-toolbar";
+    Object.assign(toolbar.style, {
+      position: "fixed",
+      top: "20px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: "rgba(30, 30, 30, 0.95)",
+      borderRadius: "8px",
+      padding: "12px 20px",
+      display: "flex",
+      alignItems: "center",
+      gap: "20px",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      fontSize: "12px",
+      color: "#fff",
+      backdropFilter: "blur(10px)",
+      zIndex: 99992,
+      boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+      userSelect: "none"
+    });
+
+    // Dimensions display
+    const dimensionsLabel = document.createElement("div");
+    dimensionsLabel.id = "di-frame-dimensions";
+    dimensionsLabel.style.cssText = "font-weight: 600; color: #4fc3f7; font-family: monospace;";
+
+    // Zoom controls
+    const zoomContainer = document.createElement("div");
+    zoomContainer.style.cssText = "display: flex; align-items: center; gap: 8px;";
+
+    const zoomLabel = document.createElement("span");
+    zoomLabel.style.color = "#999";
+    zoomLabel.textContent = "Zoom:";
+
+    const zoomValue = document.createElement("span");
+    zoomValue.id = "di-zoom-value";
+    zoomValue.style.cssText = "color: #4fc3f7; min-width: 45px; text-align: center; font-family: monospace;";
+    zoomValue.textContent = "100%";
+
+    const zoomOut = createToolbarButton("−", () => adjustZoom(-0.1));
+    const zoomIn = createToolbarButton("+", () => adjustZoom(0.1));
+    const zoomReset = createToolbarButton("Reset", () => setZoom(1));
+
+    zoomContainer.append(zoomLabel, zoomOut, zoomValue, zoomIn, zoomReset);
+
+    // Rotate button
+    const rotateBtn = createToolbarButton("⟲ Rotate", () => rotateViewport());
+
+    // Touch mode toggle
+    const touchToggle = document.createElement("label");
+    touchToggle.style.cssText = "display: flex; align-items: center; gap: 6px; cursor: pointer;";
+
+    const touchCheckbox = document.createElement("input");
+    touchCheckbox.type = "checkbox";
+    touchCheckbox.id = "di-touch-mode";
+    touchCheckbox.checked = true;
+    touchCheckbox.style.cursor = "pointer";
+
+    const touchLabel = document.createElement("span");
+    touchLabel.textContent = "Touch Mode";
+    touchLabel.style.color = "#999";
+
+    touchToggle.append(touchCheckbox, touchLabel);
+
+    toolbar.append(dimensionsLabel, zoomContainer, rotateBtn, touchToggle);
+
+    document.body.appendChild(overlay);
+    document.body.appendChild(toolbar);
+
+    S.viewportFrame = {
+      overlay: overlay,
+      frameContainer: frameContainer,
+      iframe: iframe,
+      toolbar: toolbar,
+      zoomLevel: 1
+    };
+
+    // Clone current page into iframe
+    iframe.onload = () => {
+      initializeIframeContent();
+    };
+
+    // Trigger initial load
+    iframe.srcdoc = "<!DOCTYPE html><html><head></head><body></body></html>";
+  }
+  // Helper to create toolbar buttons
+  function createToolbarButton(text, onClick) {
+    const btn = document.createElement("button");
+    btn.textContent = text;
+    Object.assign(btn.style, {
+      padding: "6px 12px",
+      background: "rgba(255,255,255,0.1)",
+      border: "1px solid rgba(255,255,255,0.2)",
+      borderRadius: "4px",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "11px",
+      fontWeight: "500",
+      transition: "all 0.2s",
+      whiteSpace: "nowrap"
+    });
+
+    btn.onmouseenter = () => {
+      btn.style.background = "rgba(255,255,255,0.2)";
+      btn.style.borderColor = "#007acc";
+    };
+    btn.onmouseleave = () => {
+      btn.style.background = "rgba(255,255,255,0.1)";
+      btn.style.borderColor = "rgba(255,255,255,0.2)";
+    };
+
+    btn.onclick = onClick;
+    return btn;
+  }
+  // Initialize iframe with current page content
+  function initializeIframeContent() {
+    const iframe = S.viewportFrame?.iframe;
+    if (!iframe || !iframe.contentDocument) return;
+
+    const iframeDoc = iframe.contentDocument;
+
+    // Clone head content (styles, meta tags, etc.)
+    const headContent = document.head.cloneNode(true);
+
+    // Remove existing viewport meta and add responsive one
+    const existingViewport = headContent.querySelector('meta[name="viewport"]');
+    if (existingViewport) existingViewport.remove();
+
+    const viewportMeta = iframeDoc.createElement('meta');
+    viewportMeta.name = 'viewport';
+    viewportMeta.content = `width=${S.currentViewport.width}, initial-scale=1.0, user-scalable=no`;
+    headContent.appendChild(viewportMeta);
+
+    // Clone body content
+    const bodyContent = document.body.cloneNode(true);
+
+    // Remove inspector UI elements from clone
+    const inspectorElements = bodyContent.querySelectorAll('.di-inspect-btn, .di-responsive-btn, .di-viewport-overlay, .di-viewport-toolbar, .di-responsive-panel, .di-hover-panel, .di-selected-panel, .di-selected-overlay, .di-box-layer, .di-grid-overlay, .di-flex-overlay');
+    inspectorElements.forEach(el => el.remove());
+
+    // Replace iframe content
+    iframeDoc.documentElement.innerHTML = '';
+    iframeDoc.documentElement.appendChild(headContent);
+    iframeDoc.documentElement.appendChild(bodyContent);
+
+    // Apply viewport dimensions
+    applyViewportToIframe(S.currentViewport);
+
+    // Enable inspector in iframe if it was active
+    if (S.inspecting) {
+      enableIframeInspector();
+    }
+  }
+  // Zoom controls
+  function adjustZoom(delta) {
+    const newZoom = Math.max(0.25, Math.min(2, S.viewportFrame.zoomLevel + delta));
+    setZoom(newZoom);
+  }
+  function setZoom(zoom) {
+    if (!S.viewportFrame) return;
+
+    S.viewportFrame.zoomLevel = zoom;
+    const iframe = S.viewportFrame.iframe;
+    const frameContainer = S.viewportFrame.frameContainer;
+
+    frameContainer.style.transform = `scale(${zoom})`;
+    frameContainer.style.transformOrigin = "center center";
+
+    const zoomValue = document.getElementById("di-zoom-value");
+    if (zoomValue) {
+      zoomValue.textContent = Math.round(zoom * 100) + "%";
+    }
+  }
+  function rotateViewport() {
+    const temp = S.currentViewport.width;
+    applyViewport({
+      ...S.currentViewport,
+      width: S.currentViewport.height,
+      height: temp
+    });
+  }
+  function applyViewport(preset) {
+    if (!S.responsiveMode) return;
+
+    S.currentViewport = { ...preset };
+
+    applyViewportToIframe(preset);
+
+    // Update UI displays
+    updateViewportDisplays(preset);
+  }
+  function applyViewportToIframe(preset) {
+    const iframe = S.viewportFrame?.iframe;
+    const frameContainer = S.viewportFrame?.frameContainer;
+    if (!iframe || !frameContainer) return;
+
+    // Set iframe dimensions
+    iframe.style.width = preset.width + "px";
+    iframe.style.height = preset.height + "px";
+
+    // Update viewport meta in iframe
+    const iframeDoc = iframe.contentDocument;
+    if (iframeDoc) {
+      let viewportMeta = iframeDoc.querySelector('meta[name="viewport"]');
+      if (!viewportMeta) {
+        viewportMeta = iframeDoc.createElement('meta');
+        viewportMeta.name = 'viewport';
+        iframeDoc.head.appendChild(viewportMeta);
+      }
+      viewportMeta.content = `width=${preset.width}, initial-scale=1.0, user-scalable=no`;
+
+      // Force layout recalculation
+      iframeDoc.body.offsetHeight;
+
+      // Dispatch resize event in iframe
+      iframe.contentWindow.dispatchEvent(new Event('resize'));
+    }
+
+    // Auto-fit zoom if needed
+    autoFitZoom(preset);
+  }
+  function autoFitZoom(preset) {
+    const maxWidth = window.innerWidth - 400; // Leave space for panels
+    const maxHeight = window.innerHeight - 200; // Leave space for toolbar
+
+    let scale = 1;
+    if (preset.width > maxWidth || preset.height > maxHeight) {
+      const scaleX = maxWidth / preset.width;
+      const scaleY = maxHeight / preset.height;
+      scale = Math.min(scaleX, scaleY, 1);
+    }
+
+    setZoom(scale);
+  }
+  function updateViewportDisplays(preset) {
+    const widthDisplay = document.getElementById("di-viewport-width");
+    const heightDisplay = document.getElementById("di-viewport-height");
+    const nameDisplay = document.getElementById("di-viewport-name");
+    const dimensionsLabel = document.getElementById("di-frame-dimensions");
+
+    if (widthDisplay) widthDisplay.textContent = preset.width;
+    if (heightDisplay) heightDisplay.textContent = preset.height;
+    if (nameDisplay) nameDisplay.textContent = preset.name;
+    if (dimensionsLabel) dimensionsLabel.textContent = `${preset.width} × ${preset.height}`;
+
+    // Update custom inputs in responsive panel
+    const widthInput = document.getElementById("di-custom-width");
+    const heightInput = document.getElementById("di-custom-height");
+    if (widthInput) widthInput.value = preset.width;
+    if (heightInput) heightInput.value = preset.height;
+  }
+
+  // Enable inspector to work inside iframe
+  function enableIframeInspector() {
+    const iframe = S.viewportFrame?.iframe;
+    if (!iframe || !iframe.contentDocument) return;
+
+    const iframeDoc = iframe.contentDocument;
+    const iframeWin = iframe.contentWindow;
+
+    // Attach event listeners to iframe document
+    const iframeMouseMove = (e) => {
+      if (!S.inspecting) return;
+
+      const target = e.target;
+      if (isInspectorElement(target)) return;
+
+      // Map iframe coordinates to parent
+      const iframeRect = iframe.getBoundingClientRect();
+      const zoom = S.viewportFrame.zoomLevel;
+
+      const mappedEvent = {
+        target: target,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        pageX: e.pageX,
+        pageY: e.pageY
+      };
+
+      handleIframeMouseMove(mappedEvent);
+    };
+
+    const iframeClick = (e) => {
+      if (!S.inspecting) return;
+
+      const target = e.target;
+      if (isInspectorElement(target)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      handleIframeClick(target);
+    };
+
+    const iframeKeyDown = (e) => {
+      if (!S.inspecting) return;
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        stopInspect();
+      } else if (e.key === "c" || e.key === "C") {
+        if (S.lastHoveredIframeElement) {
+          e.preventDefault();
+          const data = getDataFromIframeElement(S.lastHoveredIframeElement);
+          navigator.clipboard.writeText(cssText(data));
+          showCopyNotification();
+        }
+      }
+    };
+
+    iframeDoc.addEventListener("mousemove", iframeMouseMove);
+    iframeDoc.addEventListener("click", iframeClick, true);
+    iframeDoc.addEventListener("keydown", iframeKeyDown);
+
+    // Touch event simulation
+    const touchCheckbox = document.getElementById("di-touch-mode");
+    if (touchCheckbox && touchCheckbox.checked) {
+      enableTouchSimulation(iframeDoc);
+    }
+
+    // Store handlers for cleanup
+    S.iframeHandlers = {
+      mousemove: iframeMouseMove,
+      click: iframeClick,
+      keydown: iframeKeyDown
+    };
+
+    // Set cursor in iframe
+    iframeDoc.body.style.cursor = "crosshair";
+  }
+  function handleIframeMouseMove(e) {
+    if (!S.viewportFrame?.iframe) return;
+
+    S.lastHoveredIframeElement = e.target;
+
+    const data = getDataFromIframeElement(e.target);
+
+    // Create overlay in parent document (positioned over iframe)
+    updateIframeBoxModelLayers(data);
+
+    if (S.hoverPanel) {
+      S.hoverPanel.style.display = "block";
+      updateHoverPanel(data);
+      positionHoverPanelForIframe(data);
+    }
+  }
+  function handleIframeClick(target) {
+    const data = getDataFromIframeElement(target);
+    addSelected(data);
+    stopInspect();
+  }
+  function getDataFromIframeElement(el) {
+    const iframe = S.viewportFrame?.iframe;
+    if (!iframe) return null;
+
+    const iframeDoc = iframe.contentDocument;
+    const cs = iframeDoc.defaultView.getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+
+    // Map coordinates from iframe to parent
+    const iframeRect = iframe.getBoundingClientRect();
+    const zoom = S.viewportFrame.zoomLevel;
+
+    const mappedRect = {
+      top: iframeRect.top + (r.top * zoom),
+      left: iframeRect.left + (r.left * zoom),
+      width: r.width * zoom,
+      height: r.height * zoom,
+      bottom: iframeRect.top + (r.bottom * zoom),
+      right: iframeRect.left + (r.right * zoom)
+    };
+
+    let selector = el.tagName.toLowerCase();
+    if (el.id) selector += "#" + el.id;
+    if (el.className && typeof el.className === 'string') {
+      const classes = el.className.trim().split(/\s+/).filter(c => c && !c.startsWith('di-'));
+      if (classes.length > 0) selector += "." + classes.join(".");
+    }
+
+    const parseBox = (str) => {
+      const parts = str.split(' ').map(p => parseFloat(p) || 0);
+      if (parts.length === 1) return [parts[0], parts[0], parts[0], parts[0]];
+      if (parts.length === 2) return [parts[0], parts[1], parts[0], parts[1]];
+      if (parts.length === 3) return [parts[0], parts[1], parts[2], parts[1]];
+      return parts;
+    };
+
+    return {
+      el,
+      rect: mappedRect,
+      selector,
+      path: getElementPath(el),
+      fontSize: cs.fontSize,
+      color: cs.color,
+      background: cs.backgroundColor,
+      margin: cs.margin,
+      marginValues: parseBox(cs.margin),
+      padding: cs.padding,
+      paddingValues: parseBox(cs.padding),
+      borderValues: parseBox(cs.borderWidth),
+      width: Math.round(r.width) + "px",
+      height: Math.round(r.height) + "px",
+      display: cs.display,
+      position: cs.position,
+      top: cs.top,
+      left: cs.left,
+      right: cs.right,
+      bottom: cs.bottom,
+      zIndex: cs.zIndex,
+      fontFamily: cs.fontFamily,
+      fontWeight: cs.fontWeight,
+      lineHeight: cs.lineHeight,
+      textAlign: cs.textAlign,
+      letterSpacing: cs.letterSpacing,
+      textTransform: cs.textTransform,
+      textDecoration: cs.textDecoration,
+      border: cs.border,
+      borderRadius: cs.borderRadius,
+      boxShadow: cs.boxShadow,
+      outline: cs.outline,
+      flexDirection: cs.flexDirection,
+      justifyContent: cs.justifyContent,
+      alignItems: cs.alignItems,
+      flexWrap: cs.flexWrap,
+      gap: cs.gap,
+      gridTemplateColumns: cs.gridTemplateColumns,
+      gridTemplateRows: cs.gridTemplateRows,
+      gridGap: cs.gridGap,
+      opacity: cs.opacity,
+      overflow: cs.overflow,
+      cursor: cs.cursor,
+      transition: cs.transition,
+      transform: cs.transform,
+      isIframeElement: true
+    };
+  }
+  function updateIframeBoxModelLayers(data) {
+    // Remove old layers
+    Object.values(S.boxModelLayers).forEach(layer => remove(layer));
+    S.boxModelLayers = {};
+    clearGridFlexOverlays();
+
+    if (!data || !data.rect) return;
+
+    const r = data.rect;
+    const margin = data.marginValues;
+    const padding = data.paddingValues;
+    const border = data.borderValues;
+
+    // Margin layer (Warm Orange - external spacing)
+    const marginLayer = document.createElement("div");
+    marginLayer.className = "di-box-layer di-box-margin";
+    Object.assign(marginLayer.style, {
+      position: "fixed",
+      top: (r.top - margin[0]) + "px",
+      left: (r.left - margin[3]) + "px",
+      width: (r.width + margin[1] + margin[3]) + "px",
+      height: (r.height + margin[0] + margin[2]) + "px",
+      background: "rgba(255, 152, 0, 0.25)",
+      border: "1px dashed rgba(255, 152, 0, 0.8)",
+      boxShadow: "inset 0 0 0 1px rgba(255, 152, 0, 0.15)",
+      zIndex: 99995,
+      pointerEvents: "none",
+      boxSizing: "border-box"
+    });
+    document.body.appendChild(marginLayer);
+    S.boxModelLayers.margin = marginLayer;
+
+    // Border layer (Golden Yellow - boundary)
+    const borderLayer = document.createElement("div");
+    borderLayer.className = "di-box-layer di-box-border";
+    Object.assign(borderLayer.style, {
+      position: "fixed",
+      top: r.top + "px",
+      left: r.left + "px",
+      width: r.width + "px",
+      height: r.height + "px",
+      background: "rgba(255, 235, 59, 0.25)",
+      border: "1px solid rgba(255, 235, 59, 0.9)",
+      boxShadow: "inset 0 0 0 1px rgba(255, 235, 59, 0.2)",
+      zIndex: 99996,
+      pointerEvents: "none",
+      boxSizing: "border-box"
+    });
+    document.body.appendChild(borderLayer);
+    S.boxModelLayers.border = borderLayer;
+
+    // Padding layer (Soft Green - internal space)
+    const paddingWidth = r.width - border[1] - border[3];
+    const paddingHeight = r.height - border[0] - border[2];
+
+    if (paddingWidth > 0 && paddingHeight > 0) {
+      const paddingLayer = document.createElement("div");
+      paddingLayer.className = "di-box-layer di-box-padding";
+      Object.assign(paddingLayer.style, {
+        position: "fixed",
+        top: (r.top + border[0]) + "px",
+        left: (r.left + border[3]) + "px",
+        width: paddingWidth + "px",
+        height: paddingHeight + "px",
+        background: "rgba(139, 195, 74, 0.25)",
+        border: "1px dotted rgba(139, 195, 74, 0.8)",
+        boxShadow: "inset 0 0 0 1px rgba(139, 195, 74, 0.15)",
+        zIndex: 99997,
+        pointerEvents: "none",
+        boxSizing: "border-box"
+      });
+      document.body.appendChild(paddingLayer);
+      S.boxModelLayers.padding = paddingLayer;
+    }
+
+    // Content layer (Cool Blue - core content)
+    const contentWidth = r.width - border[1] - border[3] - padding[1] - padding[3];
+    const contentHeight = r.height - border[0] - border[2] - padding[0] - padding[2];
+
+    if (contentWidth > 0 && contentHeight > 0) {
+      const contentLayer = document.createElement("div");
+      contentLayer.className = "di-box-layer di-box-content";
+      Object.assign(contentLayer.style, {
+        position: "fixed",
+        top: (r.top + border[0] + padding[0]) + "px",
+        left: (r.left + border[3] + padding[3]) + "px",
+        width: contentWidth + "px",
+        height: contentHeight + "px",
+        background: "rgba(33, 150, 243, 0.30)",
+        border: "2px solid rgba(33, 150, 243, 0.95)",
+        boxShadow: "inset 0 0 0 1px rgba(33, 150, 243, 0.2), 0 0 8px rgba(33, 150, 243, 0.3)",
+        zIndex: 99998,
+        pointerEvents: "none",
+        boxSizing: "border-box"
+      });
+      document.body.appendChild(contentLayer);
+      S.boxModelLayers.content = contentLayer;
+    }
+
+    // Add grid/flex overlays for iframe elements
+    if (data.isIframeElement && data.el) {
+      const iframe = S.viewportFrame?.iframe;
+      if (iframe) {
+        const iframeDoc = iframe.contentDocument;
+        const cs = iframeDoc.defaultView.getComputedStyle(data.el);
+
+        if (cs.display === 'grid' || cs.display === 'inline-grid') {
+          addIframeGridOverlay(data);
+        } else if (cs.display === 'flex' || cs.display === 'inline-flex') {
+          addIframeFlexOverlay(data);
+        }
+      }
+    }
+  }
+  function addIframeGridOverlay(data) {
+    const r = data.rect;
+    const overlay = document.createElement("div");
+    overlay.className = "di-grid-overlay";
+
+    Object.assign(overlay.style, {
+      position: "fixed",
+      top: r.top + "px",
+      left: r.left + "px",
+      width: r.width + "px",
+      height: r.height + "px",
+      pointerEvents: "none",
+      zIndex: 99998,
+      border: "2px dashed rgba(147, 51, 234, 0.6)",
+      background: "repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(147, 51, 234, 0.2) 19px, rgba(147, 51, 234, 0.2) 20px), repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(147, 51, 234, 0.2) 19px, rgba(147, 51, 234, 0.2) 20px)"
+    });
+
+    document.body.appendChild(overlay);
+    S.gridFlexOverlays.push(overlay);
+  }
+  function addIframeFlexOverlay(data) {
+    const r = data.rect;
+    const iframe = S.viewportFrame?.iframe;
+    if (!iframe) return;
+
+    const iframeDoc = iframe.contentDocument;
+    const cs = iframeDoc.defaultView.getComputedStyle(data.el);
+    const flexDirection = cs.flexDirection;
+
+    const overlay = document.createElement("div");
+    overlay.className = "di-flex-overlay";
+
+    Object.assign(overlay.style, {
+      position: "fixed",
+      top: r.top + "px",
+      left: r.left + "px",
+      width: r.width + "px",
+      height: r.height + "px",
+      pointerEvents: "none",
+      zIndex: 99998,
+      border: "2px dashed rgba(59, 130, 246, 0.6)"
+    });
+
+    const arrow = document.createElement("div");
+    arrow.style.cssText = `
+    position: absolute;
+    color: rgba(59, 130, 246, 0.9);
+    font-size: 24px;
+    font-weight: bold;
+    text-shadow: 0 0 4px rgba(0,0,0,0.8);
+  `;
+
+    if (flexDirection === 'row') {
+      arrow.textContent = '→';
+      arrow.style.top = '5px';
+      arrow.style.left = '5px';
+    } else if (flexDirection === 'row-reverse') {
+      arrow.textContent = '←';
+      arrow.style.top = '5px';
+      arrow.style.right = '5px';
+    } else if (flexDirection === 'column') {
+      arrow.textContent = '↓';
+      arrow.style.top = '5px';
+      arrow.style.left = '5px';
+    } else if (flexDirection === 'column-reverse') {
+      arrow.textContent = '↑';
+      arrow.style.bottom = '5px';
+      arrow.style.left = '5px';
+    }
+
+    overlay.appendChild(arrow);
+    document.body.appendChild(overlay);
+    S.gridFlexOverlays.push(overlay);
+  }
+  function positionHoverPanelForIframe(data) {
+    if (!S.hoverPanel) return;
+
+    const r = data.rect;
+    const panelRect = S.hoverPanel.getBoundingClientRect();
+    const OFFSET = 10;
+    const VIEWPORT_PADDING = 10;
+
+    let top, left;
+
+    // Position relative to fixed iframe coordinates
+    S.hoverPanel.style.position = "fixed";
+
+    // Try above
+    if (r.top - panelRect.height - OFFSET > VIEWPORT_PADDING) {
+      top = r.top - panelRect.height - OFFSET;
+      left = r.left;
+    }
+    // Try below
+    else if (r.bottom + panelRect.height + OFFSET < window.innerHeight - VIEWPORT_PADDING) {
+      top = r.bottom + OFFSET;
+      left = r.left;
+    }
+    // Try right
+    else if (r.right + panelRect.width + OFFSET < window.innerWidth - VIEWPORT_PADDING) {
+      top = r.top;
+      left = r.right + OFFSET;
+    }
+    // Try left
+    else if (r.left - panelRect.width - OFFSET > VIEWPORT_PADDING) {
+      top = r.top;
+      left = r.left - panelRect.width - OFFSET;
+    }
+    // Fallback: top-left corner
+    else {
+      top = VIEWPORT_PADDING;
+      left = VIEWPORT_PADDING;
+    }
+
+    // Constrain to viewport
+    left = Math.max(VIEWPORT_PADDING, Math.min(left, window.innerWidth - panelRect.width - VIEWPORT_PADDING));
+    top = Math.max(VIEWPORT_PADDING, Math.min(top, window.innerHeight - panelRect.height - VIEWPORT_PADDING));
+
+    S.hoverPanel.style.top = top + "px";
+    S.hoverPanel.style.left = left + "px";
+  }
+  function showCopyNotification() {
+    const notification = document.createElement("div");
+    notification.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(76, 175, 80, 0.95);
+    color: white;
+    padding: 16px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: bold;
+    z-index: 100001;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    font-family: system-ui, -apple-system, sans-serif;
+  `;
+    notification.textContent = '✓ CSS Copied to Clipboard!';
+    document.body.appendChild(notification);
+
+    setTimeout(() => remove(notification), 1500);
+  }
+  // Touch event simulation
+  function enableTouchSimulation(iframeDoc) {
+    // Convert mouse events to touch events
+    iframeDoc.addEventListener('mousedown', (e) => {
+      const touch = createTouchEvent('touchstart', e);
+      e.target.dispatchEvent(touch);
+    }, true);
+
+    iframeDoc.addEventListener('mousemove', (e) => {
+      if (e.buttons === 1) {
+        const touch = createTouchEvent('touchmove', e);
+        e.target.dispatchEvent(touch);
+      }
+    }, true);
+    iframeDoc.addEventListener('mouseup', (e) => {
+      const touch = createTouchEvent('touchend', e);
+      e.target.dispatchEvent(touch);
+    }, true);
+  }
+  function createTouchEvent(type, mouseEvent) {
+    const touch = new Touch({
+      identifier: 0,
+      target: mouseEvent.target,
+      clientX: mouseEvent.clientX,
+      clientY: mouseEvent.clientY,
+      pageX: mouseEvent.pageX,
+      pageY: mouseEvent.pageY,
+      screenX: mouseEvent.screenX,
+      screenY: mouseEvent.screenY,
+      radiusX: 10,
+      radiusY: 10,
+      force: 0.5
+    });
+    return new TouchEvent(type, {
+      touches: type === 'touchend' ? [] : [touch],
+      targetTouches: type === 'touchend' ? [] : [touch],
+      changedTouches: [touch],
+      bubbles: true,
+      cancelable: true
+    });
+  }
+
+  function createResponsivePanel() {
+    if (S.responsivePanel) return;
+
+    const panel = document.createElement("div");
+    panel.className = "di-responsive-panel";
+    Object.assign(panel.style, {
+      position: "fixed",
+      top: "10px",
+      right: "10px",
+      width: "320px",
+      background: "rgba(30, 30, 30, 0.98)",
+      color: "#fff",
+      fontSize: "12px",
+      borderRadius: "8px",
+      zIndex: 100001,
+      boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      backdropFilter: "blur(20px)",
+      border: "1px solid rgba(255,255,255,0.1)"
+    });
+
+    // Header
+    const header = document.createElement("div");
+    Object.assign(header.style, {
+      padding: "12px 16px",
+      borderBottom: "1px solid rgba(255,255,255,0.1)",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      background: "rgba(0,0,0,0.2)",
+      borderRadius: "8px 8px 0 0"
+    });
+
+    const title = document.createElement("span");
+    title.textContent = "📱 Responsive Design";
+    title.style.fontWeight = "bold";
+    title.style.fontSize = "13px";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "×";
+    Object.assign(closeBtn.style, {
+      background: "none",
+      border: "none",
+      color: "#fff",
+      fontSize: "24px",
+      cursor: "pointer",
+      padding: "0",
+      lineHeight: "1",
+      width: "24px",
+      height: "24px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: "4px",
+      transition: "background 0.2s"
+    });
+    closeBtn.onmouseenter = () => closeBtn.style.background = "rgba(255,255,255,0.1)";
+    closeBtn.onmouseleave = () => closeBtn.style.background = "none";
+    closeBtn.onclick = exitResponsiveMode;
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    // Content
+    const content = document.createElement("div");
+    content.style.padding = "16px";
+
+    // Current viewport display
+    const currentDisplay = document.createElement("div");
+    currentDisplay.className = "di-current-viewport";
+    Object.assign(currentDisplay.style, {
+      background: "rgba(0, 122, 204, 0.15)",
+      padding: "12px",
+      borderRadius: "6px",
+      marginBottom: "16px",
+      border: "1px solid rgba(0, 122, 204, 0.3)"
+    });
+    currentDisplay.innerHTML = `
+    <div style="font-size: 11px; color: #999; margin-bottom: 4px;">Current Viewport</div>
+    <div style="font-size: 16px; font-weight: bold; color: #4fc3f7;">
+      <span id="di-viewport-width">${S.currentViewport.width}</span> × 
+      <span id="di-viewport-height">${S.currentViewport.height}</span>
+    </div>
+    <div style="font-size: 10px; color: #999; margin-top: 4px;">
+      <span id="di-viewport-name">${S.currentViewport.name}</span>
+      <span id="di-viewport-scale" style="margin-left: 8px;"></span>
+    </div>
+  `;
+
+    // Custom dimensions input
+    const customSection = document.createElement("div");
+    customSection.style.marginBottom = "16px";
+
+    const customLabel = document.createElement("div");
+    customLabel.textContent = "Custom Dimensions";
+    customLabel.style.cssText = "font-size: 11px; color: #999; margin-bottom: 8px; font-weight: 500;";
+
+    const inputContainer = document.createElement("div");
+    inputContainer.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px;";
+
+    const widthInput = document.createElement("input");
+    widthInput.type = "number";
+    widthInput.placeholder = "Width";
+    widthInput.id = "di-custom-width";
+    widthInput.min = "320";
+    widthInput.max = "7680";
+    widthInput.value = S.currentViewport.width;
+
+    const heightInput = document.createElement("input");
+    heightInput.type = "number";
+    heightInput.placeholder = "Height";
+    heightInput.id = "di-custom-height";
+    heightInput.min = "240";
+    heightInput.max = "4320";
+    heightInput.value = S.currentViewport.height;
+
+    [widthInput, heightInput].forEach(input => {
+      Object.assign(input.style, {
+        flex: "1",
+        padding: "8px 10px",
+        background: "rgba(255,255,255,0.05)",
+        border: "1px solid rgba(255,255,255,0.1)",
+        borderRadius: "4px",
+        color: "#fff",
+        fontSize: "12px",
+        fontFamily: "monospace"
+      });
+      input.onfocus = () => input.style.borderColor = "#007acc";
+      input.onblur = () => input.style.borderColor = "rgba(255,255,255,0.1)";
+    });
+
+    const applyCustomBtn = document.createElement("button");
+    applyCustomBtn.textContent = "Apply";
+    applyCustomBtn.className = "di-button";
+    Object.assign(applyCustomBtn.style, {
+      width: "100%",
+      padding: "8px",
+      background: "#007acc",
+      border: "none",
+      borderRadius: "4px",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "12px",
+      fontWeight: "500",
+      transition: "background 0.2s"
+    });
+    applyCustomBtn.onmouseenter = () => applyCustomBtn.style.background = "#005a9e";
+    applyCustomBtn.onmouseleave = () => applyCustomBtn.style.background = "#007acc";
+    applyCustomBtn.onclick = () => {
+      const w = parseInt(widthInput.value);
+      const h = parseInt(heightInput.value);
+      if (w >= 320 && h >= 240) {
+        applyViewport({ name: 'Custom', width: w, height: h, type: 'custom' });
+      }
+    };
+
+    inputContainer.appendChild(widthInput);
+    inputContainer.appendChild(heightInput);
+    customSection.appendChild(customLabel);
+    customSection.appendChild(inputContainer);
+    customSection.appendChild(applyCustomBtn);
+
+    // Rotation button
+    const rotateBtn = document.createElement("button");
+    rotateBtn.textContent = "🔄 Rotate (90°)";
+    rotateBtn.className = "di-button";
+    Object.assign(rotateBtn.style, {
+      width: "100%",
+      padding: "8px",
+      background: "rgba(255,255,255,0.05)",
+      border: "1px solid rgba(255,255,255,0.1)",
+      borderRadius: "4px",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "12px",
+      fontWeight: "500",
+      marginBottom: "16px",
+      transition: "all 0.2s"
+    });
+    rotateBtn.onmouseenter = () => {
+      rotateBtn.style.background = "rgba(255,255,255,0.1)";
+      rotateBtn.style.borderColor = "#007acc";
+    };
+    rotateBtn.onmouseleave = () => {
+      rotateBtn.style.background = "rgba(255,255,255,0.05)";
+      rotateBtn.style.borderColor = "rgba(255,255,255,0.1)";
+    };
+    rotateBtn.onclick = () => {
+      const temp = S.currentViewport.width;
+      applyViewport({
+        ...S.currentViewport,
+        width: S.currentViewport.height,
+        height: temp
+      });
+      widthInput.value = S.currentViewport.width;
+      heightInput.value = S.currentViewport.height;
+    };
+
+    // Presets section
+    const presetsLabel = document.createElement("div");
+    presetsLabel.textContent = "Device Presets";
+    presetsLabel.style.cssText = "font-size: 11px; color: #999; margin-bottom: 8px; font-weight: 500;";
+
+    const presetsContainer = document.createElement("div");
+    presetsContainer.style.cssText = "max-height: 300px; overflow-y: auto; margin-bottom: 12px;";
+
+    // Group presets by type
+    const groupedPresets = {
+      mobile: viewportPresets.filter(p => p.type === 'mobile'),
+      tablet: viewportPresets.filter(p => p.type === 'tablet'),
+      desktop: viewportPresets.filter(p => p.type === 'desktop')
+    };
+
+    const typeIcons = {
+      mobile: '📱',
+      tablet: '📟',
+      desktop: '🖥️'
+    };
+
+    const typeLabels = {
+      mobile: 'Mobile Devices',
+      tablet: 'Tablets',
+      desktop: 'Desktops'
+    };
+
+    Object.entries(groupedPresets).forEach(([type, presets]) => {
+      if (presets.length === 0) return;
+
+      const groupLabel = document.createElement("div");
+      groupLabel.textContent = `${typeIcons[type]} ${typeLabels[type]}`;
+      groupLabel.style.cssText = "font-size: 10px; color: #666; margin: 12px 0 6px 0; font-weight: 600; text-transform: uppercase;";
+      presetsContainer.appendChild(groupLabel);
+
+      presets.forEach(preset => {
+        const presetBtn = document.createElement("button");
+        presetBtn.className = "di-preset-btn";
+        presetBtn.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <span style="font-weight: 500;">${preset.name}</span>
+          <span style="font-size: 10px; color: #999; font-family: monospace;">${preset.width} × ${preset.height}</span>
+        </div>
+      `;
+        Object.assign(presetBtn.style, {
+          width: "100%",
+          padding: "10px 12px",
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: "6px",
+          color: "#fff",
+          cursor: "pointer",
+          fontSize: "12px",
+          marginBottom: "6px",
+          transition: "all 0.2s",
+          textAlign: "left"
+        });
+
+        presetBtn.onmouseenter = () => {
+          presetBtn.style.background = "rgba(0, 122, 204, 0.15)";
+          presetBtn.style.borderColor = "#007acc";
+          presetBtn.style.transform = "translateX(2px)";
+        };
+        presetBtn.onmouseleave = () => {
+          presetBtn.style.background = "rgba(255,255,255,0.03)";
+          presetBtn.style.borderColor = "rgba(255,255,255,0.08)";
+          presetBtn.style.transform = "translateX(0)";
+        };
+
+        presetBtn.onclick = () => {
+          applyViewport(preset);
+          widthInput.value = preset.width;
+          heightInput.value = preset.height;
+        };
+
+        presetsContainer.appendChild(presetBtn);
+      });
+    });
+
+    // Reset button
+    // const resetBtn = document.createElement("button");
+    // resetBtn.textContent = "↺ Reset to Full Screen";
+    // resetBtn.className = "di-button";
+    // Object.assign(resetBtn.style, {
+    //   width: "100%",
+    //   padding: "10px",
+    //   background: "rgba(220, 53, 69, 0.2)",
+    //   border: "1px solid rgba(220, 53, 69, 0.5)",
+    //   borderRadius: "6px",
+    //   color: "#ff6b6b",
+    //   cursor: "pointer",
+    //   fontSize: "12px",
+    //   fontWeight: "500",
+    //   transition: "all 0.2s"
+    // });
+    // resetBtn.onmouseenter = () => {
+    //   resetBtn.style.background = "rgba(220, 53, 69, 0.3)";
+    //   resetBtn.style.borderColor = "#dc3545";
+    // };
+    // resetBtn.onmouseleave = () => {
+    //   resetBtn.style.background = "rgba(220, 53, 69, 0.2)";
+    //   resetBtn.style.borderColor = "rgba(220, 53, 69, 0.5)";
+    // };
+    // resetBtn.onclick = resetViewport;
+
+    content.appendChild(currentDisplay);
+    content.appendChild(customSection);
+    content.appendChild(rotateBtn);
+    content.appendChild(presetsLabel);
+    content.appendChild(presetsContainer);
+    // content.appendChild(resetBtn);
+
+    panel.appendChild(header);
+    panel.appendChild(content);
+    document.body.appendChild(panel);
+
+    S.responsivePanel = panel;
+  }
+
+  function enterResponsiveMode() {
+    if (S.responsiveMode) return;
+
+    S.responsiveMode = true;
+    setState(STATES.SELECTED);
+
+    createViewportFrame();
+    createResponsivePanel();
+
+    // Set initial viewport to current window size
+    S.currentViewport = {
+      name: 'Current',
+      width: window.innerWidth,
+      height: window.innerHeight,
+      type: 'desktop'
+    };
+
+    console.log('[DOM Inspector] Responsive mode activated');
+  }
+
+  function exitResponsiveMode() {
+    if (!S.responsiveMode) return;
+    S.responsiveMode = false;
+    // Remove UI elements
+    if (S.responsivePanel) {
+      remove(S.responsivePanel);
+      S.responsivePanel = null;
+    }
+    if (S.viewportFrame) {
+      // Remove all viewport frame components
+      remove(S.viewportFrame.overlay);
+      remove(S.viewportFrame.toolbar);
+      S.viewportFrame = null;
+    }
+    // Clean up iframe handlers if they exist
+    if (S.iframeHandlers) {
+      S.iframeHandlers = null;
+    }
+    setState(STATES.IDLE);
+    console.log('[DOM Inspector] Responsive mode deactivated');
+  }
+
+  /*  PSEUDO-STATE INSPECTOR  */
   function createPseudoStateToggle(data) {
     const container = document.createElement("div");
     container.style.cssText = `
@@ -1153,7 +2402,7 @@ ${d.selector} {
     return container;
   }
 
-  /* ---------------- SELECTED ITEMS ---------------- */
+  /*  SELECTED ITEMS  */
   function addSelected(data) {
     if (!isValidState() || !Array.isArray(S.selectedItems)) {
       S.selectedItems = [];
@@ -1280,13 +2529,29 @@ ${d.selector} {
     S.selectedItems.push({ overlay, item, data });
   }
 
-  /* ---------------- CLEANUP ---------------- */
+  /*  CLEANUP  */
   function cleanup() {
     console.log('[DOM Inspector] Cleaning up...');
     setState(STATES.CLEANING);
 
     detachEventListeners();
     stopDrag();
+
+    // Exit responsive mode if active
+    if (S.responsiveMode) {
+      exitResponsiveMode();
+    }
+
+    // NEW: Clean up iframe handlers
+    if (S.iframeHandlers && S.viewportFrame?.iframe) {
+      const iframeDoc = S.viewportFrame.iframe.contentDocument;
+      if (iframeDoc) {
+        iframeDoc.removeEventListener("mousemove", S.iframeHandlers.mousemove);
+        iframeDoc.removeEventListener("click", S.iframeHandlers.click, true);
+        iframeDoc.removeEventListener("keydown", S.iframeHandlers.keydown);
+      }
+      S.iframeHandlers = null;
+    }
 
     // Cancel all pending operations
     if (S.rafId) {
@@ -1307,10 +2572,21 @@ ${d.selector} {
     // Clear cache
     elementDataCache.clear();
 
+    // Disconnect resize observer
+    if (S.resizeObserver) {
+      S.resizeObserver.disconnect();
+      S.resizeObserver = null;
+    }
+
     // Remove UI elements
     remove(S.hoverPanel);
     remove(S.panelContainer);
     remove(S.inspectBtn);
+
+    // Remove responsive button
+    const responsiveBtn = document.getElementById("dom-responsive-btn");
+    if (responsiveBtn) remove(responsiveBtn);
+
     Object.values(S.boxModelLayers).forEach(layer => remove(layer));
     clearGridFlexOverlays();
 
@@ -1322,15 +2598,6 @@ ${d.selector} {
           i.data.el.classList.remove('di-force-hover', 'di-force-focus', 'di-force-active');
         }
       });
-
-      // Clear cache
-      elementDataCache.clear();
-
-      // Disconnect resize observer
-      if (S.resizeObserver) {
-        S.resizeObserver.disconnect();
-        S.resizeObserver = null;
-      }
     }
 
     // Clean up pseudo-state styles
@@ -1343,6 +2610,9 @@ ${d.selector} {
     S.hoverPanel = null;
     S.panelContainer = null;
     S.inspectBtn = null;
+    S.responsivePanel = null;
+    S.viewportFrame = null;
+    S.responsiveMode = false;
     S.boxModelLayers = {};
     S.gridFlexOverlays = [];
     S.selectedItems = [];
@@ -1359,7 +2629,7 @@ ${d.selector} {
     console.log('[DOM Inspector] Cleanup complete');
   }
 
-  /* ---------------- MESSAGES ---------------- */
+  /*  MESSAGES  */
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.type === "START_INSPECT") {
@@ -1369,7 +2639,6 @@ ${d.selector} {
       }
     });
   }
-
   // Initialize
   setState(STATES.IDLE);
   ensureInspectButton();
@@ -1380,4 +2649,5 @@ ${d.selector} {
   console.log('  ✓ Pseudo-state inspector (:hover, :focus, :active)');
   console.log('  ✓ Grid/Flex visual helpers');
   console.log('  ✓ Performance-safe RAF throttling');
+  console.log('  ✓ Responsive Design Testing');
 })();
