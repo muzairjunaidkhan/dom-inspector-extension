@@ -32,6 +32,8 @@
     rafId: null,
     pendingMouseEvent: null,
     gridFlexOverlays: [],
+    scrollTimeout: null,
+    resizeObserver: null,
     handlers: {
       mousemove: null,
       click: null,
@@ -41,6 +43,9 @@
       stopDrag: null
     }
   };
+  // Cache for element data to reduce recalculations
+  const elementDataCache = new Map();
+  let cacheInvalidationFrame = null;
 
   // Default CSS values for diff
   const DEFAULT_CSS = {
@@ -72,7 +77,7 @@
     transition: 'all 0s ease 0s'
   };
 
-  /* ---------------- UTILS ---------------- */
+  /*  UTILS  */
   const remove = (el) => {
     if (el && el.parentNode) {
       el.parentNode.removeChild(el);
@@ -194,6 +199,10 @@ ${d.selector} {
 }`.trim();
 
   const getData = (el) => {
+    // Check cache first
+    const cached = elementDataCache.get(el);
+    if (cached && cached.data) return cached.data;
+
     const cs = getComputedStyle(el);
     const r = el.getBoundingClientRect();
 
@@ -216,7 +225,7 @@ ${d.selector} {
     const paddingValues = parseBox(cs.padding);
     const borderValues = parseBox(cs.borderWidth);
 
-    return {
+    const data = {
       el,
       rect: r,
       selector: selector,
@@ -263,6 +272,20 @@ ${d.selector} {
       transition: cs.transition,
       transform: cs.transform
     };
+
+    // Cache the data with timestamp for cleanup
+    elementDataCache.set(el, { data, timestamp: Date.now() });
+
+    // Schedule cache invalidation on next frame
+    if (!cacheInvalidationFrame) {
+      cacheInvalidationFrame = requestAnimationFrame(() => {
+        // Clear cache to prevent memory leaks
+        elementDataCache.clear();
+        cacheInvalidationFrame = null;
+      });
+    }
+
+    return data;
   };
 
   const isInspectorElement = (el) => {
@@ -285,7 +308,7 @@ ${d.selector} {
       el.classList.contains('di-breadcrumb');
   };
 
-  /* ---------------- GRID/FLEX VISUALIZATION ---------------- */
+  /*  GRID/FLEX VISUALIZATION  */
   function clearGridFlexOverlays() {
     S.gridFlexOverlays.forEach(overlay => remove(overlay));
     S.gridFlexOverlays = [];
@@ -364,7 +387,7 @@ ${d.selector} {
     S.gridFlexOverlays.push(overlay);
   }
 
-  /* ---------------- BOX MODEL VISUALIZATION ---------------- */
+  /*  BOX MODEL VISUALIZATION  */
   function updateBoxModelLayers(data) {
     if (!isValidState()) return;
 
@@ -453,7 +476,7 @@ ${d.selector} {
     clearGridFlexOverlays();
   }
 
-  /* ---------------- UI CREATION ---------------- */
+  /*  UI CREATION  */
   function ensureInspectButton() {
     if (S.inspectBtn) return;
 
@@ -649,9 +672,7 @@ ${d.selector} {
       S.hoverPanel = document.createElement("div");
       S.hoverPanel.className = "di-hover-panel";
       Object.assign(S.hoverPanel.style, {
-        position: "fixed",
-        top: "10px",
-        left: "10px",
+        position: "absolute",  // Changed from "fixed"
         background: "rgba(34, 34, 34, 0.95)",
         color: "#fff",
         fontSize: "11px",
@@ -663,11 +684,74 @@ ${d.selector} {
         maxWidth: "400px",
         fontFamily: "system-ui, -apple-system, monospace",
         backdropFilter: "blur(10px)",
-        maxHeight: "80vh",
-        overflowY: "auto"
+        maxHeight: "300px",  // Changed from "80vh" for better control
+        overflowY: "auto",
+        // No initial top/left - will be set dynamically
+        willChange: "transform"  // Performance hint for repositioning
       });
       document.body.appendChild(S.hoverPanel);
     }
+  }
+  function positionHoverPanel(data) {
+    if (!S.hoverPanel) return;
+
+    const r = data.rect;
+    const panelRect = S.hoverPanel.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const scrollY = window.scrollY;
+    const scrollX = window.scrollX;
+
+    const OFFSET = 10; // Gap between element and panel
+    const VIEWPORT_PADDING = 10; // Keep panel away from viewport edges
+
+    let top, left;
+
+    // Try positioning above the element
+    if (r.top - panelRect.height - OFFSET > VIEWPORT_PADDING) {
+      top = r.top + scrollY - panelRect.height - OFFSET;
+      left = r.left + scrollX;
+    }
+    // Try positioning below the element
+    else if (r.bottom + panelRect.height + OFFSET < viewportHeight - VIEWPORT_PADDING) {
+      top = r.bottom + scrollY + OFFSET;
+      left = r.left + scrollX;
+    }
+    // Try positioning to the right
+    else if (r.right + panelRect.width + OFFSET < viewportWidth - VIEWPORT_PADDING) {
+      top = r.top + scrollY;
+      left = r.right + scrollX + OFFSET;
+    }
+    // Try positioning to the left
+    else if (r.left - panelRect.width - OFFSET > VIEWPORT_PADDING) {
+      top = r.top + scrollY;
+      left = r.left + scrollX - panelRect.width - OFFSET;
+    }
+    // Fallback: top-left of viewport with fixed positioning
+    else {
+      S.hoverPanel.style.position = "fixed";
+      S.hoverPanel.style.top = VIEWPORT_PADDING + "px";
+      S.hoverPanel.style.left = VIEWPORT_PADDING + "px";
+      return;
+    }
+
+    // Ensure position is absolute and constrain to viewport
+    S.hoverPanel.style.position = "absolute";
+
+    // Constrain horizontal position
+    left = Math.max(
+      scrollX + VIEWPORT_PADDING,
+      Math.min(left, scrollX + viewportWidth - panelRect.width - VIEWPORT_PADDING)
+    );
+
+    // Constrain vertical position
+    top = Math.max(
+      scrollY + VIEWPORT_PADDING,
+      Math.min(top, scrollY + viewportHeight - panelRect.height - VIEWPORT_PADDING)
+    );
+
+    S.hoverPanel.style.top = top + "px";
+    S.hoverPanel.style.left = left + "px";
   }
 
   function ensurePanelContainer() {
@@ -797,7 +881,7 @@ ${d.selector} {
     if (S.handlers.stopDrag) document.removeEventListener("mouseup", S.handlers.stopDrag);
   }
 
-  /* ---------------- INSPECT FLOW ---------------- */
+  /*  INSPECT FLOW  */
   function startInspect() {
     if (!isValidState() || S.state === STATES.INSPECTING) return;
 
@@ -812,7 +896,7 @@ ${d.selector} {
       S.inspectBtn.style.background = "#ff6600";
       S.inspectBtn.style.transform = "none";
     }
-
+    initializeResizeObserver();
     attachEventListeners();
   }
 
@@ -834,9 +918,15 @@ ${d.selector} {
     }
 
     hideBoxModelLayers();
+    // Hide hover panel when stopping inspection
+    if (S.hoverPanel) {
+      S.hoverPanel.style.display = "none";
+    }
+    // Clear last hovered element reference
+    S.lastHoveredElement = null;
   }
 
-  /* ---------------- EVENT HANDLERS WITH RAF ---------------- */
+  /*  EVENT HANDLERS WITH RAF  */
   function attachEventListeners() {
     detachEventListeners();
 
@@ -886,6 +976,7 @@ ${d.selector} {
     if (S.hoverPanel) {
       S.hoverPanel.style.display = "block";
       updateHoverPanel(d);
+      positionHoverPanel(d);
     }
 
     S.rafId = null;
@@ -949,22 +1040,47 @@ ${d.selector} {
     }
   }
 
-  let scrollTimeout;
   function handleScroll() {
     if (!isValidState() || !S.inspecting) return;
 
     hideBoxModelLayers();
-    clearTimeout(scrollTimeout);
-    scrollTimeout = setTimeout(() => {
+
+    // Clear previous timeout to prevent memory leak
+    if (S.scrollTimeout) {
+      clearTimeout(S.scrollTimeout);
+      S.scrollTimeout = null;
+    }
+
+    S.scrollTimeout = setTimeout(() => {
       if (S.inspecting && isValidState() && S.lastHoveredElement) {
         if (!isInspectorElement(S.lastHoveredElement)) {
-          updateBoxModelLayers(getData(S.lastHoveredElement));
+          const d = getData(S.lastHoveredElement);
+          updateBoxModelLayers(d);
+          positionHoverPanel(d);
         }
       }
+      S.scrollTimeout = null;  // Clean reference after execution
     }, 50);
   }
+  function initializeResizeObserver() {
+    if (S.resizeObserver) return;
 
-  /* ---------------- PSEUDO-STATE INSPECTOR ---------------- */
+    S.resizeObserver = new ResizeObserver(() => {
+      // Invalidate cache when window resizes
+      elementDataCache.clear();
+
+      // Update box model layers if inspecting
+      if (S.inspecting && S.lastHoveredElement && !isInspectorElement(S.lastHoveredElement)) {
+        const d = getData(S.lastHoveredElement);
+        updateBoxModelLayers(d);
+        positionHoverPanel(d);
+      }
+    });
+
+    S.resizeObserver.observe(document.body);
+  }
+
+  /*  PSEUDO-STATE INSPECTOR  */
   function createPseudoStateToggle(data) {
     const container = document.createElement("div");
     container.style.cssText = `
@@ -1037,7 +1153,7 @@ ${d.selector} {
     return container;
   }
 
-  /* ---------------- SELECTED ITEMS ---------------- */
+  /*  SELECTED ITEMS  */
   function addSelected(data) {
     if (!isValidState() || !Array.isArray(S.selectedItems)) {
       S.selectedItems = [];
@@ -1164,7 +1280,7 @@ ${d.selector} {
     S.selectedItems.push({ overlay, item, data });
   }
 
-  /* ---------------- CLEANUP ---------------- */
+  /*  CLEANUP  */
   function cleanup() {
     console.log('[DOM Inspector] Cleaning up...');
     setState(STATES.CLEANING);
@@ -1172,17 +1288,33 @@ ${d.selector} {
     detachEventListeners();
     stopDrag();
 
+    // Cancel all pending operations
     if (S.rafId) {
       cancelAnimationFrame(S.rafId);
       S.rafId = null;
     }
 
+    if (S.scrollTimeout) {
+      clearTimeout(S.scrollTimeout);
+      S.scrollTimeout = null;
+    }
+
+    if (cacheInvalidationFrame) {
+      cancelAnimationFrame(cacheInvalidationFrame);
+      cacheInvalidationFrame = null;
+    }
+
+    // Clear cache
+    elementDataCache.clear();
+
+    // Remove UI elements
     remove(S.hoverPanel);
     remove(S.panelContainer);
     remove(S.inspectBtn);
     Object.values(S.boxModelLayers).forEach(layer => remove(layer));
     clearGridFlexOverlays();
 
+    // Clean up selected items
     if (Array.isArray(S.selectedItems)) {
       S.selectedItems.forEach(i => {
         remove(i.overlay);
@@ -1190,6 +1322,15 @@ ${d.selector} {
           i.data.el.classList.remove('di-force-hover', 'di-force-focus', 'di-force-active');
         }
       });
+
+      // Clear cache
+      elementDataCache.clear();
+
+      // Disconnect resize observer
+      if (S.resizeObserver) {
+        S.resizeObserver.disconnect();
+        S.resizeObserver = null;
+      }
     }
 
     // Clean up pseudo-state styles
@@ -1198,6 +1339,7 @@ ${d.selector} {
       if (style) remove(style);
     });
 
+    // Reset all state
     S.hoverPanel = null;
     S.panelContainer = null;
     S.inspectBtn = null;
@@ -1206,6 +1348,10 @@ ${d.selector} {
     S.selectedItems = [];
     S.lastHoveredElement = null;
     S.pendingMouseEvent = null;
+    S.scrollTimeout = null;
+    S.panelX = null;
+    S.panelY = null;
+    S.isDragging = false;
 
     document.body.style.cursor = "default";
     window.__DOM_INSPECTOR__ = false;
@@ -1213,7 +1359,7 @@ ${d.selector} {
     console.log('[DOM Inspector] Cleanup complete');
   }
 
-  /* ---------------- MESSAGES ---------------- */
+  /*  MESSAGES  */
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.type === "START_INSPECT") {
@@ -1223,7 +1369,6 @@ ${d.selector} {
       }
     });
   }
-
   // Initialize
   setState(STATES.IDLE);
   ensureInspectButton();
