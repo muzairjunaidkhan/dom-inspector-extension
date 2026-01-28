@@ -40,6 +40,7 @@
     viewportFrame: null,
     iframeHandlers: null,
     originalViewportMeta: undefined,
+    originalBodyOverflow: undefined,
     handlers: {
       mousemove: null,
       click: null,
@@ -1214,7 +1215,7 @@ ${d.selector} {
       position: "relative",
       background: "#000",
       borderRadius: "12px",
-      padding: "60px 20px 60px 20px", // Space for device chrome
+      padding: "60px 20px 60px 20px",
       boxShadow: "0 20px 60px rgba(0,0,0,0.8)",
       display: "flex",
       flexDirection: "column",
@@ -1231,62 +1232,179 @@ ${d.selector} {
       borderRadius: "4px"
     });
 
+    // Loading indicator
+    const loadingIndicator = document.createElement("div");
+    loadingIndicator.className = "di-loading-indicator";
+    loadingIndicator.innerHTML = `
+      <div style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        color: #666;
+        font-family: system-ui, sans-serif;
+        display: flex;
+      ">
+        <div style="
+          width: 50px;
+          height: 50px;
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid #007acc;
+          border-radius: 50%;
+          margin: 0 auto 20px;
+          animation: spin 1s linear infinite;
+        "></div>
+        <div>Loading responsive view...</div>
+      </div>
+      <style>
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      </style>
+    `;
+    Object.assign(loadingIndicator.style, {
+      position: "absolute",
+      top: "0",
+      left: "0",
+      width: "100%",
+      height: "100%",
+      background: "#fff",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: "1"
+    });
+
+    frameContainer.appendChild(loadingIndicator);
     frameContainer.appendChild(iframe);
     overlay.appendChild(frameContainer);
 
-    // Toolbar with controls
+    // Enhanced Chrome DevTools-style Toolbar
     const toolbar = document.createElement("div");
     toolbar.className = "di-viewport-toolbar";
     Object.assign(toolbar.style, {
       position: "fixed",
-      top: "20px",
-      left: "50%",
-      transform: "translateX(-50%)",
-      background: "rgba(30, 30, 30, 0.95)",
-      borderRadius: "8px",
-      padding: "12px 20px",
+      top: "0",
+      left: "0",
+      right: "0",
+      background: "rgba(30, 30, 30, 0.98)",
+      borderBottom: "1px solid rgba(255,255,255,0.1)",
+      padding: "8px 16px",
       display: "flex",
       alignItems: "center",
-      gap: "20px",
+      gap: "16px",
       fontFamily: "system-ui, -apple-system, sans-serif",
       fontSize: "12px",
       color: "#fff",
-      backdropFilter: "blur(10px)",
+      backdropFilter: "blur(20px)",
       zIndex: 99992,
-      boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
-      userSelect: "none"
+      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+      userSelect: "none",
+      height: "48px",
+      boxSizing: "border-box"
     });
 
-    // Dimensions display
-    const dimensionsLabel = document.createElement("div");
-    dimensionsLabel.id = "di-frame-dimensions";
-    dimensionsLabel.style.cssText = "font-weight: 600; color: #4fc3f7; font-family: monospace;";
+    // Current dimensions display (left side)
+    const dimensionsDisplay = document.createElement("div");
+    dimensionsDisplay.className = "di-toolbar-dimensions";
+    dimensionsDisplay.style.cssText = "display: flex; align-items: center; gap: 8px; min-width: 150px;";
+    dimensionsDisplay.innerHTML = `
+    <span style="color: #999; font-size: 11px;">Dimensions:</span>
+    <span id="di-frame-dimensions" style="font-weight: 600; color: #4fc3f7; font-family: monospace;">
+      ${S.currentViewport.width} × ${S.currentViewport.height}
+    </span>
+  `;
+
+    // Separator
+    const separator1 = createSeparator();
+
+    // Custom dimensions input
+    const customDimensionsContainer = document.createElement("div");
+    customDimensionsContainer.className = "di-toolbar-custom-inputs";
+    customDimensionsContainer.style.cssText = "display: flex; align-items: center; gap: 6px;";
+
+    const widthInput = createDimensionInput("di-custom-width", S.currentViewport.width, "W");
+    const heightInput = createDimensionInput("di-custom-height", S.currentViewport.height, "H");
+
+    const applyBtn = createToolbarButton("Apply", () => {
+      // Get the actual input elements, not containers
+      const wInput = document.getElementById("di-custom-width");
+      const hInput = document.getElementById("di-custom-height");
+
+      if (wInput && hInput) {
+        const w = parseInt(wInput.value);
+        const h = parseInt(hInput.value);
+
+        if (w >= 320 && h >= 240) {
+          applyViewport({ name: 'Custom', width: w, height: h, type: 'custom' });
+        } else {
+          console.warn('[DOM Inspector] Invalid dimensions. Min: 320x240');
+        }
+      }
+    });
+    applyBtn.className = "di-toolbar-apply-btn";
+    applyBtn.style.padding = "4px 10px";
+    applyBtn.style.background = "#007acc";
+    applyBtn.onmouseenter = () => applyBtn.style.background = "#005a9e";
+    applyBtn.onmouseleave = () => applyBtn.style.background = "#007acc";
+
+    customDimensionsContainer.append(widthInput, heightInput, applyBtn);
+
+    // Separator
+    const separator2 = createSeparator();
+
+    // Device presets dropdown
+    const presetDropdown = createPresetDropdown();
+
+    // Separator
+    const separator3 = createSeparator();
 
     // Zoom controls
     const zoomContainer = document.createElement("div");
-    zoomContainer.style.cssText = "display: flex; align-items: center; gap: 8px;";
+    zoomContainer.className = "di-toolbar-zoom";
+    zoomContainer.style.cssText = "display: flex; align-items: center; gap: 6px;";
 
     const zoomLabel = document.createElement("span");
     zoomLabel.style.color = "#999";
+    zoomLabel.style.fontSize = "11px";
     zoomLabel.textContent = "Zoom:";
 
     const zoomValue = document.createElement("span");
     zoomValue.id = "di-zoom-value";
-    zoomValue.style.cssText = "color: #4fc3f7; min-width: 45px; text-align: center; font-family: monospace;";
+    zoomValue.style.cssText = "color: #4fc3f7; min-width: 45px; text-align: center; font-family: monospace; font-size: 11px;";
     zoomValue.textContent = "100%";
 
     const zoomOut = createToolbarButton("−", () => adjustZoom(-0.1));
     const zoomIn = createToolbarButton("+", () => adjustZoom(0.1));
-    const zoomReset = createToolbarButton("Reset", () => setZoom(1));
+    const zoomReset = createToolbarButton("100%", () => setZoom(1));
 
     zoomContainer.append(zoomLabel, zoomOut, zoomValue, zoomIn, zoomReset);
 
+    // Separator
+    const separator4 = createSeparator();
+
     // Rotate button
-    const rotateBtn = createToolbarButton("⟲ Rotate", () => rotateViewport());
+    const rotateBtn = createToolbarButton("⟲", () => {
+      const temp = S.currentViewport.width;
+      applyViewport({
+        ...S.currentViewport,
+        width: S.currentViewport.height,
+        height: temp
+      });
+    });
+    rotateBtn.className = "di-toolbar-rotate-btn";
+    rotateBtn.title = "Rotate viewport";
+
+    // Separator
+    const separator5 = createSeparator();
 
     // Touch mode toggle
     const touchToggle = document.createElement("label");
+    touchToggle.className = "di-toolbar-touch-toggle";
     touchToggle.style.cssText = "display: flex; align-items: center; gap: 6px; cursor: pointer;";
+    touchToggle.title = "Simulate touch events";
 
     const touchCheckbox = document.createElement("input");
     touchCheckbox.type = "checkbox";
@@ -1295,12 +1413,56 @@ ${d.selector} {
     touchCheckbox.style.cursor = "pointer";
 
     const touchLabel = document.createElement("span");
-    touchLabel.textContent = "Touch Mode";
-    touchLabel.style.color = "#999";
+    touchLabel.textContent = "Touch";
+    touchLabel.style.cssText = "color: #999; font-size: 11px;";
 
     touchToggle.append(touchCheckbox, touchLabel);
 
-    toolbar.append(dimensionsLabel, zoomContainer, rotateBtn, touchToggle);
+    // Spacer to push close button to right
+    const spacer = document.createElement("div");
+    spacer.className = "di-toolbar-spacer";
+    spacer.style.flex = "1";
+
+    // Close button
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "di-toolbar-close-btn";
+    closeBtn.textContent = "×";
+    closeBtn.title = "Exit responsive mode";
+    Object.assign(closeBtn.style, {
+      background: "none",
+      border: "none",
+      color: "#fff",
+      fontSize: "24px",
+      cursor: "pointer",
+      padding: "0",
+      lineHeight: "1",
+      width: "32px",
+      height: "32px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: "4px",
+      transition: "background 0.2s"
+    });
+    closeBtn.onmouseenter = () => closeBtn.style.background = "rgba(220, 53, 69, 0.2)";
+    closeBtn.onmouseleave = () => closeBtn.style.background = "none";
+    closeBtn.onclick = exitResponsiveMode;
+
+    toolbar.append(
+      dimensionsDisplay,
+      separator1,
+      customDimensionsContainer,
+      separator2,
+      presetDropdown,
+      separator3,
+      zoomContainer,
+      separator4,
+      rotateBtn,
+      separator5,
+      touchToggle,
+      spacer,
+      closeBtn
+    );
 
     document.body.appendChild(overlay);
     document.body.appendChild(toolbar);
@@ -1310,16 +1472,287 @@ ${d.selector} {
       frameContainer: frameContainer,
       iframe: iframe,
       toolbar: toolbar,
+      loadingIndicator: loadingIndicator,
       zoomLevel: 1
     };
 
-    // Clone current page into iframe
-    iframe.onload = () => {
+    console.log('[DOM Inspector] Viewport frame created, initializing content...');
+    try {
       initializeIframeContent();
+    } catch (error) {
+      console.error('[DOM Inspector] Failed to initialize:', error);
+      showIframeError(error);
+    }
+  }
+
+  // Initialize iframe with current page content
+  function initializeIframeContent() {
+    const iframe = S.viewportFrame?.iframe;
+    const loadingIndicator = S.viewportFrame?.loadingIndicator;
+
+    if (!iframe) {
+      console.error('[DOM Inspector] Iframe not ready');
+      return;
+    }
+
+    console.log('[DOM Inspector] Starting iframe initialization...');
+
+    // Set iframe src to about:blank to trigger load
+    iframe.src = 'about:blank';
+
+    iframe.onload = () => {
+      try {
+        const iframeDoc = iframe.contentDocument;
+        const iframeWin = iframe.contentWindow;
+
+        if (!iframeDoc || !iframeWin) {
+          throw new Error('Cannot access iframe document');
+        }
+
+        console.log('[DOM Inspector] Iframe loaded, writing content...');
+
+        // Get current page HTML
+        const currentHTML = document.documentElement.outerHTML;
+
+        // Create a temporary container to manipulate HTML
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(currentHTML, 'text/html');
+
+        // Remove all inspector elements from the cloned document
+        const inspectorSelectors = [
+          '.di-inspect-btn',
+          '.di-responsive-btn',
+          '.di-viewport-overlay',
+          '.di-viewport-toolbar',
+          '.di-hover-panel',
+          '.di-selected-panel',
+          '.di-selected-overlay',
+          '.di-box-layer',
+          '.di-grid-overlay',
+          '.di-flex-overlay',
+          '#dom-inspector-btn',
+          '#dom-responsive-btn'
+        ];
+
+        inspectorSelectors.forEach(selector => {
+          doc.querySelectorAll(selector).forEach(el => el.remove());
+        });
+
+        // Update viewport meta
+        let viewportMeta = doc.querySelector('meta[name="viewport"]');
+        if (viewportMeta) {
+          viewportMeta.setAttribute('content', `width=${S.currentViewport.width}, initial-scale=1.0, user-scalable=no`);
+        } else {
+          viewportMeta = doc.createElement('meta');
+          viewportMeta.name = 'viewport';
+          viewportMeta.content = `width=${S.currentViewport.width}, initial-scale=1.0, user-scalable=no`;
+          doc.head.insertBefore(viewportMeta, doc.head.firstChild);
+        }
+
+        // Remove CSP that might block content
+        doc.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(el => el.remove());
+
+        // Get the final HTML
+        const finalHTML = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+
+        // Write to iframe
+        iframeDoc.open();
+        iframeDoc.write(finalHTML);
+        iframeDoc.close();
+
+        console.log('[DOM Inspector] Content written to iframe');
+
+        // Wait a bit for content to render, then hide loading
+        setTimeout(() => {
+          console.log('[DOM Inspector] Hiding loading indicator');
+
+          if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
+          }
+
+          // Apply viewport dimensions
+          applyViewportToIframe(S.currentViewport);
+
+          console.log('[DOM Inspector] Iframe initialized successfully');
+
+          // Enable inspector if needed
+          if (S.inspecting) {
+            setTimeout(() => {
+              console.log('[DOM Inspector] Enabling iframe inspector');
+              enableIframeInspector();
+            }, 200);
+          }
+        }, 800); // Increased timeout to ensure content loads
+
+      } catch (error) {
+        console.error('[DOM Inspector] Iframe initialization error:', error);
+        showIframeError(error);
+      }
     };
 
-    // Trigger initial load
-    iframe.srcdoc = "<!DOCTYPE html><html><head></head><body></body></html>";
+    iframe.onerror = (error) => {
+      console.error('[DOM Inspector] Iframe load error:', error);
+      showIframeError(new Error('Failed to load iframe'));
+    };
+  }
+
+  function showIframeError(error) {
+    const loadingIndicator = S.viewportFrame?.loadingIndicator;
+    if (loadingIndicator) {
+      loadingIndicator.innerHTML = `
+      <div style="text-align: center; color: #dc3545; font-family: system-ui, sans-serif; padding: 40px;">
+        <h3 style="margin: 0 0 16px 0;">Failed to Load Responsive View</h3>
+        <p style="margin: 0 0 8px 0; color: #999;">${error.message}</p>
+        <p style="margin: 0 0 20px 0; color: #666; font-size: 12px;">Try refreshing the page and entering responsive mode again.</p>
+        <button onclick="location.reload()" style="
+          margin-top: 20px;
+          padding: 10px 20px;
+          background: #007acc;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-family: system-ui, sans-serif;
+          font-size: 13px;
+        ">Reload Page</button>
+      </div>
+    `;
+    }
+  }
+
+  // Helper function to show errors
+  function showIframeError(error) {
+    if (S.viewportFrame?.loadingIndicator) {
+      S.viewportFrame.loadingIndicator.innerHTML = `
+      <div style="text-align: center; color: #dc3545; font-family: system-ui, sans-serif; padding: 40px;">
+        <h3 style="margin: 0 0 16px 0;">Failed to Load Responsive View</h3>
+        <p style="margin: 0 0 8px 0; color: #999;">${error.message}</p>
+        <button onclick="location.reload()" style="
+          margin-top: 20px;
+          padding: 10px 20px;
+          background: #007acc;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-family: system-ui, sans-serif;
+          font-size: 13px;
+        ">Reload Page</button>
+      </div>
+    `;
+    }
+  }
+
+  // Helper: Create dimension input
+  function createDimensionInput(id, value, label) {
+    const container = document.createElement("div");
+    container.style.cssText = "display: flex; align-items: center; gap: 4px;";
+
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = label;
+    labelSpan.style.cssText = "color: #999; font-size: 11px; font-weight: 500;";
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.id = id;
+    input.value = value;
+    input.min = "320";
+    input.max = "7680";
+    Object.assign(input.style, {
+      width: "60px",
+      padding: "4px 6px",
+      background: "rgba(255,255,255,0.05)",
+      border: "1px solid rgba(255,255,255,0.2)",
+      borderRadius: "3px",
+      color: "#fff",
+      fontSize: "11px",
+      fontFamily: "monospace",
+      textAlign: "center"
+    });
+    input.onfocus = () => input.style.borderColor = "#007acc";
+    input.onblur = () => input.style.borderColor = "rgba(255,255,255,0.2)";
+
+    container.append(labelSpan, input);
+    return container;
+  }
+
+  // Helper: Create separator
+  function createSeparator() {
+    const sep = document.createElement("div");
+    sep.className = "di-toolbar-separator";
+    sep.style.cssText = "width: 1px; height: 24px; background: rgba(255,255,255,0.1);";
+    return sep;
+  }
+
+  // Helper: Create preset dropdown
+  function createPresetDropdown() {
+    const container = document.createElement("div");
+    container.className = "di-toolbar-presets";
+    container.style.cssText = "position: relative;";
+
+    const select = document.createElement("select");
+    select.id = "di-preset-select";
+    Object.assign(select.style, {
+      padding: "4px 24px 4px 8px",
+      background: "rgba(255,255,255,0.05)",
+      border: "1px solid rgba(255,255,255,0.2)",
+      borderRadius: "3px",
+      color: "#fff",
+      fontSize: "11px",
+      cursor: "pointer",
+      appearance: "none",
+      minWidth: "180px",
+      backgroundImage: "url('data:image/svg+xml;charset=UTF-8,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%278%27%3e%3cpath fill=%27%23999%27 d=%27M0 0l6 8 6-8z%27/%3e%3c/svg%3e')",
+      backgroundRepeat: "no-repeat",
+      backgroundPosition: "right 8px center"
+    });
+
+    select.onfocus = () => select.style.borderColor = "#007acc";
+    select.onblur = () => select.style.borderColor = "rgba(255,255,255,0.2)";
+
+    // Add option groups
+    const currentOption = document.createElement("option");
+    currentOption.value = "current";
+    currentOption.textContent = `Current (${S.currentViewport.width}×${S.currentViewport.height})`;
+    select.appendChild(currentOption);
+
+    const groupedPresets = {
+      mobile: viewportPresets.filter(p => p.type === 'mobile'),
+      tablet: viewportPresets.filter(p => p.type === 'tablet'),
+      desktop: viewportPresets.filter(p => p.type === 'desktop')
+    };
+
+    Object.entries(groupedPresets).forEach(([type, presets]) => {
+      if (presets.length === 0) return;
+
+      const optgroup = document.createElement("optgroup");
+      optgroup.label = type.charAt(0).toUpperCase() + type.slice(1);
+
+      presets.forEach(preset => {
+        const option = document.createElement("option");
+        option.value = JSON.stringify(preset);
+        option.textContent = `${preset.name} (${preset.width}×${preset.height})`;
+        optgroup.appendChild(option);
+      });
+
+      select.appendChild(optgroup);
+    });
+
+    select.onchange = () => {
+      if (select.value === "current") return;
+
+      const preset = JSON.parse(select.value);
+      applyViewport(preset);
+
+      // Update custom inputs
+      const widthInput = document.getElementById("di-custom-width");
+      const heightInput = document.getElementById("di-custom-height");
+      if (widthInput) widthInput.value = preset.width;
+      if (heightInput) heightInput.value = preset.height;
+    };
+
+    container.appendChild(select);
+    return container;
   }
   // Helper to create toolbar buttons
   function createToolbarButton(text, onClick) {
@@ -1350,45 +1783,70 @@ ${d.selector} {
     btn.onclick = onClick;
     return btn;
   }
-  // Initialize iframe with current page content
-  function initializeIframeContent() {
+
+
+  // Handle CSP and other errors gracefully
+  function suppressIframeErrors() {
     const iframe = S.viewportFrame?.iframe;
-    if (!iframe || !iframe.contentDocument) return;
+    if (!iframe || !iframe.contentWindow) return;
 
-    const iframeDoc = iframe.contentDocument;
+    const iframeWin = iframe.contentWindow;
 
-    // Clone head content (styles, meta tags, etc.)
-    const headContent = document.head.cloneNode(true);
+    try {
+      // Suppress CSP and connection errors
+      iframeWin.addEventListener('error', (e) => {
+        const errorMessage = e.message || e.error?.message || '';
 
-    // Remove existing viewport meta and add responsive one
-    const existingViewport = headContent.querySelector('meta[name="viewport"]');
-    if (existingViewport) existingViewport.remove();
+        // Suppress specific known errors
+        const suppressPatterns = [
+          'Content Security Policy',
+          'Refused to load',
+          'Refused to execute',
+          'Refused to connect',
+          'connection',
+          'Receiving end does not exist',
+          'Extension context invalidated'
+        ];
 
-    const viewportMeta = iframeDoc.createElement('meta');
-    viewportMeta.name = 'viewport';
-    viewportMeta.content = `width=${S.currentViewport.width}, initial-scale=1.0, user-scalable=no`;
-    headContent.appendChild(viewportMeta);
+        const shouldSuppress = suppressPatterns.some(pattern =>
+          errorMessage.includes(pattern)
+        );
 
-    // Clone body content
-    const bodyContent = document.body.cloneNode(true);
+        if (shouldSuppress) {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('[DOM Inspector] Suppressed error:', errorMessage.substring(0, 100));
+          return false;
+        }
+      }, true);
 
-    // Remove inspector UI elements from clone
-    const inspectorElements = bodyContent.querySelectorAll('.di-inspect-btn, .di-responsive-btn, .di-viewport-overlay, .di-viewport-toolbar, .di-responsive-panel, .di-hover-panel, .di-selected-panel, .di-selected-overlay, .di-box-layer, .di-grid-overlay, .di-flex-overlay');
-    inspectorElements.forEach(el => el.remove());
+      // Suppress unhandled rejections
+      iframeWin.addEventListener('unhandledrejection', (e) => {
+        const reason = e.reason?.message || e.reason || '';
 
-    // Replace iframe content
-    iframeDoc.documentElement.innerHTML = '';
-    iframeDoc.documentElement.appendChild(headContent);
-    iframeDoc.documentElement.appendChild(bodyContent);
+        const suppressPatterns = [
+          'connection',
+          'Receiving end does not exist',
+          'Extension context',
+          'Could not establish connection'
+        ];
 
-    // Apply viewport dimensions
-    applyViewportToIframe(S.currentViewport);
+        const shouldSuppress = suppressPatterns.some(pattern =>
+          reason.toString().includes(pattern)
+        );
 
-    // Enable inspector in iframe if it was active
-    if (S.inspecting) {
-      enableIframeInspector();
+        if (shouldSuppress) {
+          e.preventDefault();
+          console.log('[DOM Inspector] Suppressed rejection:', reason.toString().substring(0, 100));
+        }
+      });
+
+      console.log('[DOM Inspector] Error suppression enabled');
+    } catch (error) {
+      console.warn('[DOM Inspector] Could not set up error suppression:', error);
     }
   }
+
   // Zoom controls
   function adjustZoom(delta) {
     const newZoom = Math.max(0.25, Math.min(2, S.viewportFrame.zoomLevel + delta));
@@ -1409,14 +1867,6 @@ ${d.selector} {
       zoomValue.textContent = Math.round(zoom * 100) + "%";
     }
   }
-  function rotateViewport() {
-    const temp = S.currentViewport.width;
-    applyViewport({
-      ...S.currentViewport,
-      width: S.currentViewport.height,
-      height: temp
-    });
-  }
   function applyViewport(preset) {
     if (!S.responsiveMode) return;
 
@@ -1432,30 +1882,34 @@ ${d.selector} {
     const frameContainer = S.viewportFrame?.frameContainer;
     if (!iframe || !frameContainer) return;
 
-    // Set iframe dimensions
-    iframe.style.width = preset.width + "px";
-    iframe.style.height = preset.height + "px";
+    try {
+      // Set iframe dimensions
+      iframe.style.width = preset.width + "px";
+      iframe.style.height = preset.height + "px";
 
-    // Update viewport meta in iframe
-    const iframeDoc = iframe.contentDocument;
-    if (iframeDoc) {
-      let viewportMeta = iframeDoc.querySelector('meta[name="viewport"]');
-      if (!viewportMeta) {
-        viewportMeta = iframeDoc.createElement('meta');
-        viewportMeta.name = 'viewport';
-        iframeDoc.head.appendChild(viewportMeta);
+      // Update viewport meta in iframe
+      const iframeDoc = iframe.contentDocument;
+      if (iframeDoc) {
+        let viewportMeta = iframeDoc.querySelector('meta[name="viewport"]');
+        if (!viewportMeta) {
+          viewportMeta = iframeDoc.createElement('meta');
+          viewportMeta.name = 'viewport';
+          iframeDoc.head.appendChild(viewportMeta);
+        }
+        viewportMeta.content = `width=${preset.width}, initial-scale=1.0, user-scalable=no`;
+
+        // Force layout recalculation
+        iframeDoc.body.offsetHeight;
+
+        // Dispatch resize event in iframe
+        iframe.contentWindow.dispatchEvent(new Event('resize'));
       }
-      viewportMeta.content = `width=${preset.width}, initial-scale=1.0, user-scalable=no`;
 
-      // Force layout recalculation
-      iframeDoc.body.offsetHeight;
-
-      // Dispatch resize event in iframe
-      iframe.contentWindow.dispatchEvent(new Event('resize'));
+      // Auto-fit zoom if needed
+      autoFitZoom(preset);
+    } catch (error) {
+      console.warn('[DOM Inspector] Could not apply viewport to iframe:', error);
     }
-
-    // Auto-fit zoom if needed
-    autoFitZoom(preset);
   }
   function autoFitZoom(preset) {
     const maxWidth = window.innerWidth - 400; // Leave space for panels
@@ -1471,21 +1925,34 @@ ${d.selector} {
     setZoom(scale);
   }
   function updateViewportDisplays(preset) {
-    const widthDisplay = document.getElementById("di-viewport-width");
-    const heightDisplay = document.getElementById("di-viewport-height");
-    const nameDisplay = document.getElementById("di-viewport-name");
     const dimensionsLabel = document.getElementById("di-frame-dimensions");
 
-    if (widthDisplay) widthDisplay.textContent = preset.width;
-    if (heightDisplay) heightDisplay.textContent = preset.height;
-    if (nameDisplay) nameDisplay.textContent = preset.name;
-    if (dimensionsLabel) dimensionsLabel.textContent = `${preset.width} × ${preset.height}`;
+    if (dimensionsLabel) {
+      dimensionsLabel.textContent = `${preset.width} × ${preset.height}`;
+    }
 
-    // Update custom inputs in responsive panel
+    // Update custom inputs
     const widthInput = document.getElementById("di-custom-width");
     const heightInput = document.getElementById("di-custom-height");
-    if (widthInput) widthInput.value = preset.width;
-    if (heightInput) heightInput.value = preset.height;
+    if (widthInput && widthInput.parentElement) widthInput.parentElement.querySelector('input').value = preset.width;
+    if (heightInput && heightInput.parentElement) heightInput.parentElement.querySelector('input').value = preset.height;
+
+    // Update dropdown
+    const presetSelect = document.getElementById("di-preset-select");
+    if (presetSelect) {
+      // Try to find matching preset
+      const matchingPreset = viewportPresets.find(p => p.width === preset.width && p.height === preset.height);
+      if (matchingPreset) {
+        presetSelect.value = JSON.stringify(matchingPreset);
+      } else {
+        presetSelect.value = "current";
+        // Update current option text
+        const currentOption = presetSelect.querySelector('option[value="current"]');
+        if (currentOption) {
+          currentOption.textContent = `${preset.name} (${preset.width}×${preset.height})`;
+        }
+      }
+    }
   }
 
   // Enable inspector to work inside iframe
@@ -1493,78 +1960,85 @@ ${d.selector} {
     const iframe = S.viewportFrame?.iframe;
     if (!iframe || !iframe.contentDocument) return;
 
-    const iframeDoc = iframe.contentDocument;
-    const iframeWin = iframe.contentWindow;
 
-    // Attach event listeners to iframe document
-    const iframeMouseMove = (e) => {
-      if (!S.inspecting) return;
+    try {
+      const iframeDoc = iframe.contentDocument;
+      const iframeWin = iframe.contentWindow;
 
-      const target = e.target;
-      if (isInspectorElement(target)) return;
+      // Attach event listeners to iframe document
+      const iframeMouseMove = (e) => {
+        if (!S.inspecting) return;
 
-      // Map iframe coordinates to parent
-      const iframeRect = iframe.getBoundingClientRect();
-      const zoom = S.viewportFrame.zoomLevel;
+        const target = e.target;
+        if (isInspectorElement(target)) return;
 
-      const mappedEvent = {
-        target: target,
-        clientX: e.clientX,
-        clientY: e.clientY,
-        pageX: e.pageX,
-        pageY: e.pageY
+        // Map iframe coordinates to parent
+        const iframeRect = iframe.getBoundingClientRect();
+        const zoom = S.viewportFrame.zoomLevel;
+
+        const mappedEvent = {
+          target: target,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          pageX: e.pageX,
+          pageY: e.pageY
+        };
+
+        handleIframeMouseMove(mappedEvent);
       };
 
-      handleIframeMouseMove(mappedEvent);
-    };
+      const iframeClick = (e) => {
+        if (!S.inspecting) return;
 
-    const iframeClick = (e) => {
-      if (!S.inspecting) return;
+        const target = e.target;
+        if (isInspectorElement(target)) return;
 
-      const target = e.target;
-      if (isInspectorElement(target)) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      handleIframeClick(target);
-    };
-
-    const iframeKeyDown = (e) => {
-      if (!S.inspecting) return;
-
-      if (e.key === "Escape") {
         e.preventDefault();
-        stopInspect();
-      } else if (e.key === "c" || e.key === "C") {
-        if (S.lastHoveredIframeElement) {
+        e.stopPropagation();
+
+        handleIframeClick(target);
+      };
+
+      const iframeKeyDown = (e) => {
+        if (!S.inspecting) return;
+
+        if (e.key === "Escape") {
           e.preventDefault();
-          const data = getDataFromIframeElement(S.lastHoveredIframeElement);
-          navigator.clipboard.writeText(cssText(data));
-          showCopyNotification();
+          stopInspect();
+        } else if (e.key === "c" || e.key === "C") {
+          if (S.lastHoveredIframeElement) {
+            e.preventDefault();
+            const data = getDataFromIframeElement(S.lastHoveredIframeElement);
+            navigator.clipboard.writeText(cssText(data));
+            showCopyNotification();
+          }
         }
+      };
+
+      iframeDoc.addEventListener("mousemove", iframeMouseMove);
+      iframeDoc.addEventListener("click", iframeClick, true);
+      iframeDoc.addEventListener("keydown", iframeKeyDown);
+
+      // Touch event simulation
+      const touchCheckbox = document.getElementById("di-touch-mode");
+      if (touchCheckbox && touchCheckbox.checked) {
+        enableTouchSimulation(iframeDoc);
       }
-    };
 
-    iframeDoc.addEventListener("mousemove", iframeMouseMove);
-    iframeDoc.addEventListener("click", iframeClick, true);
-    iframeDoc.addEventListener("keydown", iframeKeyDown);
+      // Store handlers for cleanup
+      S.iframeHandlers = {
+        mousemove: iframeMouseMove,
+        click: iframeClick,
+        keydown: iframeKeyDown
+      };
 
-    // Touch event simulation
-    const touchCheckbox = document.getElementById("di-touch-mode");
-    if (touchCheckbox && touchCheckbox.checked) {
-      enableTouchSimulation(iframeDoc);
+      // Set cursor in iframe
+      iframeDoc.body.style.cursor = "crosshair";
+
+      console.log('[DOM Inspector] Iframe inspector enabled');
+    } catch (error) {
+      console.error('[DOM Inspector] Failed to enable iframe inspector:', error);
     }
-
-    // Store handlers for cleanup
-    S.iframeHandlers = {
-      mousemove: iframeMouseMove,
-      click: iframeClick,
-      keydown: iframeKeyDown
-    };
-
-    // Set cursor in iframe
-    iframeDoc.body.style.cursor = "crosshair";
   }
   function handleIframeMouseMove(e) {
     if (!S.viewportFrame?.iframe) return;
@@ -1591,86 +2065,95 @@ ${d.selector} {
     const iframe = S.viewportFrame?.iframe;
     if (!iframe) return null;
 
-    const iframeDoc = iframe.contentDocument;
-    const cs = iframeDoc.defaultView.getComputedStyle(el);
-    const r = el.getBoundingClientRect();
+    try {
+      const iframeDoc = iframe.contentDocument;
+      if (!iframeDoc || !iframeDoc.defaultView) {
+        console.warn('[DOM Inspector] Cannot access iframe document');
+        // return null;
+      }
+      const cs = iframeDoc.defaultView.getComputedStyle(el);
+      const r = el.getBoundingClientRect();
 
-    // Map coordinates from iframe to parent
-    const iframeRect = iframe.getBoundingClientRect();
-    const zoom = S.viewportFrame.zoomLevel;
+      // Map coordinates from iframe to parent
+      const iframeRect = iframe.getBoundingClientRect();
+      const zoom = S.viewportFrame.zoomLevel;
 
-    const mappedRect = {
-      top: iframeRect.top + (r.top * zoom),
-      left: iframeRect.left + (r.left * zoom),
-      width: r.width * zoom,
-      height: r.height * zoom,
-      bottom: iframeRect.top + (r.bottom * zoom),
-      right: iframeRect.left + (r.right * zoom)
-    };
+      const mappedRect = {
+        top: iframeRect.top + (r.top * zoom),
+        left: iframeRect.left + (r.left * zoom),
+        width: r.width * zoom,
+        height: r.height * zoom,
+        bottom: iframeRect.top + (r.bottom * zoom),
+        right: iframeRect.left + (r.right * zoom)
+      };
 
-    let selector = el.tagName.toLowerCase();
-    if (el.id) selector += "#" + el.id;
-    if (el.className && typeof el.className === 'string') {
-      const classes = el.className.trim().split(/\s+/).filter(c => c && !c.startsWith('di-'));
-      if (classes.length > 0) selector += "." + classes.join(".");
+      let selector = el.tagName.toLowerCase();
+      if (el.id) selector += "#" + el.id;
+      if (el.className && typeof el.className === 'string') {
+        const classes = el.className.trim().split(/\s+/).filter(c => c && !c.startsWith('di-'));
+        if (classes.length > 0) selector += "." + classes.join(".");
+      }
+
+      const parseBox = (str) => {
+        const parts = str.split(' ').map(p => parseFloat(p) || 0);
+        if (parts.length === 1) return [parts[0], parts[0], parts[0], parts[0]];
+        if (parts.length === 2) return [parts[0], parts[1], parts[0], parts[1]];
+        if (parts.length === 3) return [parts[0], parts[1], parts[2], parts[1]];
+        return parts;
+      };
+
+      return {
+        el,
+        rect: mappedRect,
+        selector,
+        path: getElementPath(el),
+        fontSize: cs.fontSize,
+        color: cs.color,
+        background: cs.backgroundColor,
+        margin: cs.margin,
+        marginValues: parseBox(cs.margin),
+        padding: cs.padding,
+        paddingValues: parseBox(cs.padding),
+        borderValues: parseBox(cs.borderWidth),
+        width: Math.round(r.width) + "px",
+        height: Math.round(r.height) + "px",
+        display: cs.display,
+        position: cs.position,
+        top: cs.top,
+        left: cs.left,
+        right: cs.right,
+        bottom: cs.bottom,
+        zIndex: cs.zIndex,
+        fontFamily: cs.fontFamily,
+        fontWeight: cs.fontWeight,
+        lineHeight: cs.lineHeight,
+        textAlign: cs.textAlign,
+        letterSpacing: cs.letterSpacing,
+        textTransform: cs.textTransform,
+        textDecoration: cs.textDecoration,
+        border: cs.border,
+        borderRadius: cs.borderRadius,
+        boxShadow: cs.boxShadow,
+        outline: cs.outline,
+        flexDirection: cs.flexDirection,
+        justifyContent: cs.justifyContent,
+        alignItems: cs.alignItems,
+        flexWrap: cs.flexWrap,
+        gap: cs.gap,
+        gridTemplateColumns: cs.gridTemplateColumns,
+        gridTemplateRows: cs.gridTemplateRows,
+        gridGap: cs.gridGap,
+        opacity: cs.opacity,
+        overflow: cs.overflow,
+        cursor: cs.cursor,
+        transition: cs.transition,
+        transform: cs.transform,
+        isIframeElement: true
+      };
+    } catch (error) {
+      console.error('[DOM Inspector] Error getting iframe element data:', error);
+      return null;
     }
-
-    const parseBox = (str) => {
-      const parts = str.split(' ').map(p => parseFloat(p) || 0);
-      if (parts.length === 1) return [parts[0], parts[0], parts[0], parts[0]];
-      if (parts.length === 2) return [parts[0], parts[1], parts[0], parts[1]];
-      if (parts.length === 3) return [parts[0], parts[1], parts[2], parts[1]];
-      return parts;
-    };
-
-    return {
-      el,
-      rect: mappedRect,
-      selector,
-      path: getElementPath(el),
-      fontSize: cs.fontSize,
-      color: cs.color,
-      background: cs.backgroundColor,
-      margin: cs.margin,
-      marginValues: parseBox(cs.margin),
-      padding: cs.padding,
-      paddingValues: parseBox(cs.padding),
-      borderValues: parseBox(cs.borderWidth),
-      width: Math.round(r.width) + "px",
-      height: Math.round(r.height) + "px",
-      display: cs.display,
-      position: cs.position,
-      top: cs.top,
-      left: cs.left,
-      right: cs.right,
-      bottom: cs.bottom,
-      zIndex: cs.zIndex,
-      fontFamily: cs.fontFamily,
-      fontWeight: cs.fontWeight,
-      lineHeight: cs.lineHeight,
-      textAlign: cs.textAlign,
-      letterSpacing: cs.letterSpacing,
-      textTransform: cs.textTransform,
-      textDecoration: cs.textDecoration,
-      border: cs.border,
-      borderRadius: cs.borderRadius,
-      boxShadow: cs.boxShadow,
-      outline: cs.outline,
-      flexDirection: cs.flexDirection,
-      justifyContent: cs.justifyContent,
-      alignItems: cs.alignItems,
-      flexWrap: cs.flexWrap,
-      gap: cs.gap,
-      gridTemplateColumns: cs.gridTemplateColumns,
-      gridTemplateRows: cs.gridTemplateRows,
-      gridGap: cs.gridGap,
-      opacity: cs.opacity,
-      overflow: cs.overflow,
-      cursor: cs.cursor,
-      transition: cs.transition,
-      transform: cs.transform,
-      isIframeElement: true
-    };
   }
   function updateIframeBoxModelLayers(data) {
     // Remove old layers
@@ -1970,331 +2453,23 @@ ${d.selector} {
     });
   }
 
-  function createResponsivePanel() {
-    if (S.responsivePanel) return;
-
-    const panel = document.createElement("div");
-    panel.className = "di-responsive-panel";
-    Object.assign(panel.style, {
-      position: "fixed",
-      top: "10px",
-      right: "10px",
-      width: "320px",
-      background: "rgba(30, 30, 30, 0.98)",
-      color: "#fff",
-      fontSize: "12px",
-      borderRadius: "8px",
-      zIndex: 100001,
-      boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      backdropFilter: "blur(20px)",
-      border: "1px solid rgba(255,255,255,0.1)"
-    });
-
-    // Header
-    const header = document.createElement("div");
-    Object.assign(header.style, {
-      padding: "12px 16px",
-      borderBottom: "1px solid rgba(255,255,255,0.1)",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      background: "rgba(0,0,0,0.2)",
-      borderRadius: "8px 8px 0 0"
-    });
-
-    const title = document.createElement("span");
-    title.textContent = "📱 Responsive Design";
-    title.style.fontWeight = "bold";
-    title.style.fontSize = "13px";
-
-    const closeBtn = document.createElement("button");
-    closeBtn.textContent = "×";
-    Object.assign(closeBtn.style, {
-      background: "none",
-      border: "none",
-      color: "#fff",
-      fontSize: "24px",
-      cursor: "pointer",
-      padding: "0",
-      lineHeight: "1",
-      width: "24px",
-      height: "24px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: "4px",
-      transition: "background 0.2s"
-    });
-    closeBtn.onmouseenter = () => closeBtn.style.background = "rgba(255,255,255,0.1)";
-    closeBtn.onmouseleave = () => closeBtn.style.background = "none";
-    closeBtn.onclick = exitResponsiveMode;
-
-    header.appendChild(title);
-    header.appendChild(closeBtn);
-
-    // Content
-    const content = document.createElement("div");
-    content.style.padding = "16px";
-
-    // Current viewport display
-    const currentDisplay = document.createElement("div");
-    currentDisplay.className = "di-current-viewport";
-    Object.assign(currentDisplay.style, {
-      background: "rgba(0, 122, 204, 0.15)",
-      padding: "12px",
-      borderRadius: "6px",
-      marginBottom: "16px",
-      border: "1px solid rgba(0, 122, 204, 0.3)"
-    });
-    currentDisplay.innerHTML = `
-    <div style="font-size: 11px; color: #999; margin-bottom: 4px;">Current Viewport</div>
-    <div style="font-size: 16px; font-weight: bold; color: #4fc3f7;">
-      <span id="di-viewport-width">${S.currentViewport.width}</span> × 
-      <span id="di-viewport-height">${S.currentViewport.height}</span>
-    </div>
-    <div style="font-size: 10px; color: #999; margin-top: 4px;">
-      <span id="di-viewport-name">${S.currentViewport.name}</span>
-      <span id="di-viewport-scale" style="margin-left: 8px;"></span>
-    </div>
-  `;
-
-    // Custom dimensions input
-    const customSection = document.createElement("div");
-    customSection.style.marginBottom = "16px";
-
-    const customLabel = document.createElement("div");
-    customLabel.textContent = "Custom Dimensions";
-    customLabel.style.cssText = "font-size: 11px; color: #999; margin-bottom: 8px; font-weight: 500;";
-
-    const inputContainer = document.createElement("div");
-    inputContainer.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px;";
-
-    const widthInput = document.createElement("input");
-    widthInput.type = "number";
-    widthInput.placeholder = "Width";
-    widthInput.id = "di-custom-width";
-    widthInput.min = "320";
-    widthInput.max = "7680";
-    widthInput.value = S.currentViewport.width;
-
-    const heightInput = document.createElement("input");
-    heightInput.type = "number";
-    heightInput.placeholder = "Height";
-    heightInput.id = "di-custom-height";
-    heightInput.min = "240";
-    heightInput.max = "4320";
-    heightInput.value = S.currentViewport.height;
-
-    [widthInput, heightInput].forEach(input => {
-      Object.assign(input.style, {
-        flex: "1",
-        padding: "8px 10px",
-        background: "rgba(255,255,255,0.05)",
-        border: "1px solid rgba(255,255,255,0.1)",
-        borderRadius: "4px",
-        color: "#fff",
-        fontSize: "12px",
-        fontFamily: "monospace"
-      });
-      input.onfocus = () => input.style.borderColor = "#007acc";
-      input.onblur = () => input.style.borderColor = "rgba(255,255,255,0.1)";
-    });
-
-    const applyCustomBtn = document.createElement("button");
-    applyCustomBtn.textContent = "Apply";
-    applyCustomBtn.className = "di-button";
-    Object.assign(applyCustomBtn.style, {
-      width: "100%",
-      padding: "8px",
-      background: "#007acc",
-      border: "none",
-      borderRadius: "4px",
-      color: "#fff",
-      cursor: "pointer",
-      fontSize: "12px",
-      fontWeight: "500",
-      transition: "background 0.2s"
-    });
-    applyCustomBtn.onmouseenter = () => applyCustomBtn.style.background = "#005a9e";
-    applyCustomBtn.onmouseleave = () => applyCustomBtn.style.background = "#007acc";
-    applyCustomBtn.onclick = () => {
-      const w = parseInt(widthInput.value);
-      const h = parseInt(heightInput.value);
-      if (w >= 320 && h >= 240) {
-        applyViewport({ name: 'Custom', width: w, height: h, type: 'custom' });
-      }
-    };
-
-    inputContainer.appendChild(widthInput);
-    inputContainer.appendChild(heightInput);
-    customSection.appendChild(customLabel);
-    customSection.appendChild(inputContainer);
-    customSection.appendChild(applyCustomBtn);
-
-    // Rotation button
-    const rotateBtn = document.createElement("button");
-    rotateBtn.textContent = "🔄 Rotate (90°)";
-    rotateBtn.className = "di-button";
-    Object.assign(rotateBtn.style, {
-      width: "100%",
-      padding: "8px",
-      background: "rgba(255,255,255,0.05)",
-      border: "1px solid rgba(255,255,255,0.1)",
-      borderRadius: "4px",
-      color: "#fff",
-      cursor: "pointer",
-      fontSize: "12px",
-      fontWeight: "500",
-      marginBottom: "16px",
-      transition: "all 0.2s"
-    });
-    rotateBtn.onmouseenter = () => {
-      rotateBtn.style.background = "rgba(255,255,255,0.1)";
-      rotateBtn.style.borderColor = "#007acc";
-    };
-    rotateBtn.onmouseleave = () => {
-      rotateBtn.style.background = "rgba(255,255,255,0.05)";
-      rotateBtn.style.borderColor = "rgba(255,255,255,0.1)";
-    };
-    rotateBtn.onclick = () => {
-      const temp = S.currentViewport.width;
-      applyViewport({
-        ...S.currentViewport,
-        width: S.currentViewport.height,
-        height: temp
-      });
-      widthInput.value = S.currentViewport.width;
-      heightInput.value = S.currentViewport.height;
-    };
-
-    // Presets section
-    const presetsLabel = document.createElement("div");
-    presetsLabel.textContent = "Device Presets";
-    presetsLabel.style.cssText = "font-size: 11px; color: #999; margin-bottom: 8px; font-weight: 500;";
-
-    const presetsContainer = document.createElement("div");
-    presetsContainer.style.cssText = "max-height: 300px; overflow-y: auto; margin-bottom: 12px;";
-
-    // Group presets by type
-    const groupedPresets = {
-      mobile: viewportPresets.filter(p => p.type === 'mobile'),
-      tablet: viewportPresets.filter(p => p.type === 'tablet'),
-      desktop: viewportPresets.filter(p => p.type === 'desktop')
-    };
-
-    const typeIcons = {
-      mobile: '📱',
-      tablet: '📟',
-      desktop: '🖥️'
-    };
-
-    const typeLabels = {
-      mobile: 'Mobile Devices',
-      tablet: 'Tablets',
-      desktop: 'Desktops'
-    };
-
-    Object.entries(groupedPresets).forEach(([type, presets]) => {
-      if (presets.length === 0) return;
-
-      const groupLabel = document.createElement("div");
-      groupLabel.textContent = `${typeIcons[type]} ${typeLabels[type]}`;
-      groupLabel.style.cssText = "font-size: 10px; color: #666; margin: 12px 0 6px 0; font-weight: 600; text-transform: uppercase;";
-      presetsContainer.appendChild(groupLabel);
-
-      presets.forEach(preset => {
-        const presetBtn = document.createElement("button");
-        presetBtn.className = "di-preset-btn";
-        presetBtn.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-          <span style="font-weight: 500;">${preset.name}</span>
-          <span style="font-size: 10px; color: #999; font-family: monospace;">${preset.width} × ${preset.height}</span>
-        </div>
-      `;
-        Object.assign(presetBtn.style, {
-          width: "100%",
-          padding: "10px 12px",
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: "6px",
-          color: "#fff",
-          cursor: "pointer",
-          fontSize: "12px",
-          marginBottom: "6px",
-          transition: "all 0.2s",
-          textAlign: "left"
-        });
-
-        presetBtn.onmouseenter = () => {
-          presetBtn.style.background = "rgba(0, 122, 204, 0.15)";
-          presetBtn.style.borderColor = "#007acc";
-          presetBtn.style.transform = "translateX(2px)";
-        };
-        presetBtn.onmouseleave = () => {
-          presetBtn.style.background = "rgba(255,255,255,0.03)";
-          presetBtn.style.borderColor = "rgba(255,255,255,0.08)";
-          presetBtn.style.transform = "translateX(0)";
-        };
-
-        presetBtn.onclick = () => {
-          applyViewport(preset);
-          widthInput.value = preset.width;
-          heightInput.value = preset.height;
-        };
-
-        presetsContainer.appendChild(presetBtn);
-      });
-    });
-
-    // Reset button
-    // const resetBtn = document.createElement("button");
-    // resetBtn.textContent = "↺ Reset to Full Screen";
-    // resetBtn.className = "di-button";
-    // Object.assign(resetBtn.style, {
-    //   width: "100%",
-    //   padding: "10px",
-    //   background: "rgba(220, 53, 69, 0.2)",
-    //   border: "1px solid rgba(220, 53, 69, 0.5)",
-    //   borderRadius: "6px",
-    //   color: "#ff6b6b",
-    //   cursor: "pointer",
-    //   fontSize: "12px",
-    //   fontWeight: "500",
-    //   transition: "all 0.2s"
-    // });
-    // resetBtn.onmouseenter = () => {
-    //   resetBtn.style.background = "rgba(220, 53, 69, 0.3)";
-    //   resetBtn.style.borderColor = "#dc3545";
-    // };
-    // resetBtn.onmouseleave = () => {
-    //   resetBtn.style.background = "rgba(220, 53, 69, 0.2)";
-    //   resetBtn.style.borderColor = "rgba(220, 53, 69, 0.5)";
-    // };
-    // resetBtn.onclick = resetViewport;
-
-    content.appendChild(currentDisplay);
-    content.appendChild(customSection);
-    content.appendChild(rotateBtn);
-    content.appendChild(presetsLabel);
-    content.appendChild(presetsContainer);
-    // content.appendChild(resetBtn);
-
-    panel.appendChild(header);
-    panel.appendChild(content);
-    document.body.appendChild(panel);
-
-    S.responsivePanel = panel;
-  }
-
   function enterResponsiveMode() {
-    if (S.responsiveMode) return;
+    if (S.responsiveMode) {
+      console.log('[DOM Inspector] Already in responsive mode');
+      return;
+    }
+
+    console.log('[DOM Inspector] Entering responsive mode...');
 
     S.responsiveMode = true;
     setState(STATES.SELECTED);
 
     createViewportFrame();
-    createResponsivePanel();
+
+    // Store original body overflow
+    S.originalBodyOverflow = document.body.style.overflow;
+    // Hide parent body scrollbars to prevent double scrolling
+    document.body.style.overflow = 'hidden';
 
     // Set initial viewport to current window size
     S.currentViewport = {
@@ -2310,11 +2485,16 @@ ${d.selector} {
   function exitResponsiveMode() {
     if (!S.responsiveMode) return;
     S.responsiveMode = false;
-    // Remove UI elements
-    if (S.responsivePanel) {
-      remove(S.responsivePanel);
-      S.responsivePanel = null;
+    // Restore original body overflow
+    if (S.originalBodyOverflow !== undefined) {
+      document.body.style.overflow = S.originalBodyOverflow;
+      S.originalBodyOverflow = undefined;
     }
+    // Remove UI elements
+    // if (S.responsivePanel) {
+    //   remove(S.responsivePanel);
+    //   S.responsivePanel = null;
+    // }
     if (S.viewportFrame) {
       // Remove all viewport frame components
       remove(S.viewportFrame.overlay);
