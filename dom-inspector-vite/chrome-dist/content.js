@@ -41,6 +41,10 @@
     iframeHandlers: null,
     originalViewportMeta: undefined,
     originalBodyOverflow: undefined,
+    rulerMode: false,
+    rulerLines: [],
+    measurementLabels: [],
+    firstSelectedElement: null,
     handlers: {
       mousemove: null,
       click: null,
@@ -624,6 +628,60 @@ ${d.selector} {
     };
 
     document.body.appendChild(responsiveBtn);
+
+    // ADD RULER MODE BUTTON
+    const rulerBtn = document.createElement("button");
+    rulerBtn.id = "dom-ruler-btn";
+    rulerBtn.className = "di-ruler-btn";
+    rulerBtn.textContent = "📏 Ruler";
+    Object.assign(rulerBtn.style, {
+      position: "fixed",
+      bottom: "20px",
+      right: "240px", // Position to the left of responsive button
+      zIndex: 100000,
+      padding: "10px 14px",
+      background: "#e67e22",
+      color: "#fff",
+      border: "none",
+      borderRadius: "6px",
+      cursor: "pointer",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      fontSize: "13px",
+      fontWeight: "500",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+      transition: "all 0.2s"
+    });
+
+    rulerBtn.onmouseenter = () => {
+      if (!S.rulerMode) {
+        rulerBtn.style.background = "#d35400";
+        rulerBtn.style.transform = "translateY(-1px)";
+        rulerBtn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
+      }
+    };
+
+    rulerBtn.onmouseleave = () => {
+      if (!S.rulerMode) {
+        rulerBtn.style.background = "#e67e22";
+        rulerBtn.style.transform = "translateY(0)";
+        rulerBtn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
+      }
+    };
+
+    rulerBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (!S.rulerMode) {
+        startRulerMode();
+        rulerBtn.textContent = "❌ Exit Ruler";
+        rulerBtn.style.background = "#dc3545";
+      } else {
+        stopRulerMode();
+        rulerBtn.textContent = "📏 Ruler";
+        rulerBtn.style.background = "#e67e22";
+      }
+    };
+
+    document.body.appendChild(rulerBtn);
   }
 
   function createBreadcrumb(path, data) {
@@ -1775,7 +1833,6 @@ ${d.selector} {
     console.log('[DOM Inspector] Responsive mode deactivated');
   }
 
-  // Keep existing helper functions: createSeparator, createDimensionInput, createToolbarButton, createPresetDropdown, adjustZoom, setZoom, autoFitZoom, updateViewportDisplays
 
 
   // Helper: Create dimension input
@@ -2029,7 +2086,7 @@ ${d.selector} {
     }
   }
 
-  
+
 
 
   function getDataFromIframeElement(el) {
@@ -2382,47 +2439,7 @@ ${d.selector} {
 
     setTimeout(() => remove(notification), 1500);
   }
-  // Touch event simulation
-  // function enableTouchSimulation(iframeDoc) {
-  //   // Convert mouse events to touch events
-  //   iframeDoc.addEventListener('mousedown', (e) => {
-  //     const touch = createTouchEvent('touchstart', e);
-  //     e.target.dispatchEvent(touch);
-  //   }, true);
 
-  //   iframeDoc.addEventListener('mousemove', (e) => {
-  //     if (e.buttons === 1) {
-  //       const touch = createTouchEvent('touchmove', e);
-  //       e.target.dispatchEvent(touch);
-  //     }
-  //   }, true);
-  //   iframeDoc.addEventListener('mouseup', (e) => {
-  //     const touch = createTouchEvent('touchend', e);
-  //     e.target.dispatchEvent(touch);
-  //   }, true);
-  // }
-  // function createTouchEvent(type, mouseEvent) {
-  //   const touch = new Touch({
-  //     identifier: 0,
-  //     target: mouseEvent.target,
-  //     clientX: mouseEvent.clientX,
-  //     clientY: mouseEvent.clientY,
-  //     pageX: mouseEvent.pageX,
-  //     pageY: mouseEvent.pageY,
-  //     screenX: mouseEvent.screenX,
-  //     screenY: mouseEvent.screenY,
-  //     radiusX: 10,
-  //     radiusY: 10,
-  //     force: 0.5
-  //   });
-  //   return new TouchEvent(type, {
-  //     touches: type === 'touchend' ? [] : [touch],
-  //     targetTouches: type === 'touchend' ? [] : [touch],
-  //     changedTouches: [touch],
-  //     bubbles: true,
-  //     cancelable: true
-  //   });
-  // }
 
   function enterResponsiveMode() {
     if (S.responsiveMode) {
@@ -2680,6 +2697,475 @@ ${d.selector} {
     S.selectedItems.push({ overlay, item, data });
   }
 
+  /*  RULER / DISTANCE MEASUREMENT  */
+
+  function startRulerMode() {
+    if (S.rulerMode) return;
+
+    console.log('[DOM Inspector] Starting ruler mode...');
+
+    S.rulerMode = true;
+    S.firstSelectedElement = null;
+    document.body.style.cursor = "crosshair";
+
+    // Update inspect button
+    if (S.inspectBtn) {
+      S.inspectBtn.textContent = "Ruler Active (Esc to exit)";
+      S.inspectBtn.style.background = "#e67e22";
+      S.inspectBtn.disabled = true;
+      S.inspectBtn.style.opacity = "0.6";
+    }
+
+    // Attach ruler-specific event listeners
+    attachRulerListeners();
+  }
+
+  function stopRulerMode() {
+    if (!S.rulerMode) return;
+
+    console.log('[DOM Inspector] Stopping ruler mode...');
+
+    S.rulerMode = false;
+    S.firstSelectedElement = null;
+    document.body.style.cursor = "default";
+
+    // Restore inspect button
+    if (S.inspectBtn) {
+      S.inspectBtn.textContent = "Inspect";
+      S.inspectBtn.style.background = "#007acc";
+      S.inspectBtn.disabled = false;
+      S.inspectBtn.style.opacity = "1";
+    }
+
+    // Clear all ruler visuals
+    clearRulerVisuals();
+
+    // Detach ruler listeners
+    detachRulerListeners();
+  }
+
+  function attachRulerListeners() {
+    const handleRulerMouseMove = (e) => {
+      if (!S.rulerMode) return;
+      if (isInspectorElement(e.target)) return;
+
+      const hoveredElement = e.target;
+
+      if (S.firstSelectedElement) {
+        // Show distances to all sides of first element
+        showDistanceMeasurements(S.firstSelectedElement, hoveredElement);
+      } else {
+        // Just highlight current element
+        highlightElementForRuler(hoveredElement);
+      }
+    };
+
+    const handleRulerClick = (e) => {
+      if (!S.rulerMode) return;
+      if (isInspectorElement(e.target)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const clickedElement = e.target;
+
+      if (!S.firstSelectedElement) {
+        // First click - select element
+        S.firstSelectedElement = clickedElement;
+        highlightSelectedElement(clickedElement);
+        console.log('[DOM Inspector] First element selected, hover over another element');
+      } else if (clickedElement === S.firstSelectedElement) {
+        // Clicked same element - deselect
+        S.firstSelectedElement = null;
+        clearRulerVisuals();
+        console.log('[DOM Inspector] Element deselected');
+      } else {
+        // Second click - measure and keep measuring
+        showDistanceMeasurements(S.firstSelectedElement, clickedElement);
+        console.log('[DOM Inspector] Measuring distance between elements');
+      }
+    };
+
+    const handleRulerKeyDown = (e) => {
+      if (!S.rulerMode) return;
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        stopRulerMode();
+        // Also update button
+        const rulerBtn = document.getElementById("dom-ruler-btn");
+        if (rulerBtn) {
+          rulerBtn.textContent = "📏 Ruler";
+          rulerBtn.style.background = "#e67e22";
+        }
+      }
+    };
+
+    document.addEventListener("mousemove", handleRulerMouseMove);
+    document.addEventListener("click", handleRulerClick, true);
+    document.addEventListener("keydown", handleRulerKeyDown);
+
+    S.handlers.rulerMouseMove = handleRulerMouseMove;
+    S.handlers.rulerClick = handleRulerClick;
+    S.handlers.rulerKeyDown = handleRulerKeyDown;
+  }
+
+  function detachRulerListeners() {
+    if (S.handlers.rulerMouseMove) {
+      document.removeEventListener("mousemove", S.handlers.rulerMouseMove);
+      S.handlers.rulerMouseMove = null;
+    }
+    if (S.handlers.rulerClick) {
+      document.removeEventListener("click", S.handlers.rulerClick, true);
+      S.handlers.rulerClick = null;
+    }
+    if (S.handlers.rulerKeyDown) {
+      document.removeEventListener("keydown", S.handlers.rulerKeyDown);
+      S.handlers.rulerKeyDown = null;
+    }
+  }
+
+  function highlightElementForRuler(element) {
+    clearRulerVisuals();
+
+    const rect = element.getBoundingClientRect();
+
+    const highlight = document.createElement("div");
+    highlight.className = "di-ruler-highlight";
+    Object.assign(highlight.style, {
+      position: "absolute",
+      top: (rect.top + window.scrollY) + "px",
+      left: (rect.left + window.scrollX) + "px",
+      width: rect.width + "px",
+      height: rect.height + "px",
+      border: "2px solid #e67e22",
+      background: "rgba(230, 126, 34, 0.1)",
+      pointerEvents: "none",
+      zIndex: 99995,
+      boxSizing: "border-box"
+    });
+
+    document.body.appendChild(highlight);
+    S.rulerLines.push(highlight);
+  }
+
+  function highlightSelectedElement(element) {
+    clearRulerVisuals();
+
+    const rect = element.getBoundingClientRect();
+
+    const highlight = document.createElement("div");
+    highlight.className = "di-ruler-selected";
+    Object.assign(highlight.style, {
+      position: "absolute",
+      top: (rect.top + window.scrollY) + "px",
+      left: (rect.left + window.scrollX) + "px",
+      width: rect.width + "px",
+      height: rect.height + "px",
+      border: "3px solid #3498db",
+      background: "rgba(52, 152, 219, 0.15)",
+      pointerEvents: "none",
+      zIndex: 99996,
+      boxSizing: "border-box",
+      boxShadow: "0 0 0 2px rgba(52, 152, 219, 0.3)"
+    });
+
+    document.body.appendChild(highlight);
+    S.rulerLines.push(highlight);
+
+    // Add label
+    const label = document.createElement("div");
+    label.className = "di-ruler-label";
+    label.textContent = "Reference Element (Click again to deselect)";
+    Object.assign(label.style, {
+      position: "absolute",
+      top: (rect.top + window.scrollY - 30) + "px",
+      left: (rect.left + window.scrollX) + "px",
+      background: "rgba(52, 152, 219, 0.95)",
+      color: "#fff",
+      padding: "4px 8px",
+      borderRadius: "4px",
+      fontSize: "11px",
+      fontFamily: "system-ui, sans-serif",
+      fontWeight: "500",
+      pointerEvents: "none",
+      zIndex: 99997,
+      whiteSpace: "nowrap",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.3)"
+    });
+
+    document.body.appendChild(label);
+    S.measurementLabels.push(label);
+  }
+
+  function showDistanceMeasurements(element1, element2) {
+    clearRulerVisuals();
+
+    // Keep first element highlighted
+    highlightSelectedElement(element1);
+
+    const rect1 = element1.getBoundingClientRect();
+    const rect2 = element2.getBoundingClientRect();
+
+    // Highlight second element
+    const highlight2 = document.createElement("div");
+    highlight2.className = "di-ruler-target";
+    Object.assign(highlight2.style, {
+      position: "absolute",
+      top: (rect2.top + window.scrollY) + "px",
+      left: (rect2.left + window.scrollX) + "px",
+      width: rect2.width + "px",
+      height: rect2.height + "px",
+      border: "2px solid #e67e22",
+      background: "rgba(230, 126, 34, 0.1)",
+      pointerEvents: "none",
+      zIndex: 99995,
+      boxSizing: "border-box"
+    });
+    document.body.appendChild(highlight2);
+    S.rulerLines.push(highlight2);
+
+    // Calculate distances
+    const distances = calculateDistances(rect1, rect2);
+
+    // Draw distance lines and labels
+    drawDistanceLine(rect1, rect2, distances, 'top');
+    drawDistanceLine(rect1, rect2, distances, 'right');
+    drawDistanceLine(rect1, rect2, distances, 'bottom');
+    drawDistanceLine(rect1, rect2, distances, 'left');
+
+    // Draw center-to-center line
+    drawCenterLine(rect1, rect2, distances.centerDistance);
+  }
+
+  function calculateDistances(rect1, rect2) {
+    // Calculate distances from edges
+    const top = rect2.top - rect1.bottom;
+    const bottom = rect1.top - rect2.bottom;
+    const left = rect2.left - rect1.right;
+    const right = rect1.left - rect2.right;
+
+    // Calculate center-to-center distance
+    const center1X = rect1.left + rect1.width / 2;
+    const center1Y = rect1.top + rect1.height / 2;
+    const center2X = rect2.left + rect2.width / 2;
+    const center2Y = rect2.top + rect2.height / 2;
+
+    const centerDistance = Math.sqrt(
+      Math.pow(center2X - center1X, 2) + Math.pow(center2Y - center1Y, 2)
+    );
+
+    // Overlapping detection
+    const overlapX = !(rect1.right < rect2.left || rect1.left > rect2.right);
+    const overlapY = !(rect1.bottom < rect2.top || rect1.top > rect2.bottom);
+
+    return {
+      top: Math.max(0, top),
+      bottom: Math.max(0, bottom),
+      left: Math.max(0, left),
+      right: Math.max(0, right),
+      centerDistance: Math.round(centerDistance),
+      overlapX,
+      overlapY
+    };
+  }
+
+  function drawDistanceLine(rect1, rect2, distances, side) {
+    const distance = distances[side];
+
+    // Only draw if there's actual spacing (not overlapping in that direction)
+    if (side === 'top' && distance > 0 && rect2.top > rect1.bottom) {
+      const x1 = Math.max(rect1.left, rect2.left);
+      const x2 = Math.min(rect1.right, rect2.right);
+      const centerX = (x1 + x2) / 2;
+
+      // Vertical line
+      const line = createLine(
+        centerX,
+        rect1.bottom + window.scrollY,
+        centerX,
+        rect2.top + window.scrollY
+      );
+      document.body.appendChild(line);
+      S.rulerLines.push(line);
+
+      // Label
+      const label = createDistanceLabel(
+        Math.round(distance) + "px",
+        centerX,
+        (rect1.bottom + rect2.top) / 2 + window.scrollY,
+        '#9b59b6'
+      );
+      document.body.appendChild(label);
+      S.measurementLabels.push(label);
+
+    } else if (side === 'bottom' && distance > 0 && rect1.top > rect2.bottom) {
+      const x1 = Math.max(rect1.left, rect2.left);
+      const x2 = Math.min(rect1.right, rect2.right);
+      const centerX = (x1 + x2) / 2;
+
+      const line = createLine(
+        centerX,
+        rect2.bottom + window.scrollY,
+        centerX,
+        rect1.top + window.scrollY
+      );
+      document.body.appendChild(line);
+      S.rulerLines.push(line);
+
+      const label = createDistanceLabel(
+        Math.round(distance) + "px",
+        centerX,
+        (rect2.bottom + rect1.top) / 2 + window.scrollY,
+        '#9b59b6'
+      );
+      document.body.appendChild(label);
+      S.measurementLabels.push(label);
+
+    } else if (side === 'left' && distance > 0 && rect2.left > rect1.right) {
+      const y1 = Math.max(rect1.top, rect2.top);
+      const y2 = Math.min(rect1.bottom, rect2.bottom);
+      const centerY = (y1 + y2) / 2;
+
+      const line = createLine(
+        rect1.right + window.scrollX,
+        centerY,
+        rect2.left + window.scrollX,
+        centerY
+      );
+      document.body.appendChild(line);
+      S.rulerLines.push(line);
+
+      const label = createDistanceLabel(
+        Math.round(distance) + "px",
+        (rect1.right + rect2.left) / 2 + window.scrollX,
+        centerY + window.scrollY,
+        '#e74c3c'
+      );
+      document.body.appendChild(label);
+      S.measurementLabels.push(label);
+
+    } else if (side === 'right' && distance > 0 && rect1.left > rect2.right) {
+      const y1 = Math.max(rect1.top, rect2.top);
+      const y2 = Math.min(rect1.bottom, rect2.bottom);
+      const centerY = (y1 + y2) / 2;
+
+      const line = createLine(
+        rect2.right + window.scrollX,
+        centerY,
+        rect1.left + window.scrollX,
+        centerY
+      );
+      document.body.appendChild(line);
+      S.rulerLines.push(line);
+
+      const label = createDistanceLabel(
+        Math.round(distance) + "px",
+        (rect2.right + rect1.left) / 2 + window.scrollX,
+        centerY + window.scrollY,
+        '#e74c3c'
+      );
+      document.body.appendChild(label);
+      S.measurementLabels.push(label);
+    }
+  }
+
+  function drawCenterLine(rect1, rect2, distance) {
+    const center1X = rect1.left + rect1.width / 2 + window.scrollX;
+    const center1Y = rect1.top + rect1.height / 2 + window.scrollY;
+    const center2X = rect2.left + rect2.width / 2 + window.scrollX;
+    const center2Y = rect2.top + rect2.height / 2 + window.scrollY;
+
+    // Dashed line from center to center
+    const line = createLine(center1X, center1Y, center2X, center2Y, true);
+    document.body.appendChild(line);
+    S.rulerLines.push(line);
+
+    // Label at midpoint
+    const midX = (center1X + center2X) / 2;
+    const midY = (center1Y + center2Y) / 2;
+
+    const label = createDistanceLabel(
+      `${distance}px (center)`,
+      midX,
+      midY,
+      '#2ecc71',
+      true
+    );
+    document.body.appendChild(label);
+    S.measurementLabels.push(label);
+  }
+
+  function createLine(x1, y1, x2, y2, dashed = false) {
+    const line = document.createElement("div");
+    line.className = "di-ruler-line";
+
+    const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+
+    Object.assign(line.style, {
+      position: "absolute",
+      top: y1 + "px",
+      left: x1 + "px",
+      width: length + "px",
+      height: dashed ? "2px" : "2px",
+      background: dashed ? "transparent" : "#e67e22",
+      borderTop: dashed ? "2px dashed #2ecc71" : "none",
+      transformOrigin: "0 0",
+      transform: `rotate(${angle}deg)`,
+      pointerEvents: "none",
+      zIndex: 99994
+    });
+
+    return line;
+  }
+
+  function createDistanceLabel(text, x, y, color = '#e67e22', center = false) {
+    const label = document.createElement("div");
+    label.className = "di-distance-label";
+    label.textContent = text;
+
+    Object.assign(label.style, {
+      position: "absolute",
+      top: y + "px",
+      left: x + "px",
+      transform: center ? "translate(-50%, -50%)" : "translate(-50%, -50%)",
+      background: `rgba(${hexToRgb(color)}, 0.95)`,
+      color: "#fff",
+      padding: "4px 8px",
+      borderRadius: "4px",
+      fontSize: "11px",
+      fontFamily: "system-ui, monospace",
+      fontWeight: "600",
+      pointerEvents: "none",
+      zIndex: 99998,
+      whiteSpace: "nowrap",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+      border: "1px solid rgba(255,255,255,0.2)"
+    });
+
+    return label;
+  }
+
+  function hexToRgb(hex) {
+    // Simple hex to rgb converter for label backgrounds
+    const colors = {
+      '#e67e22': '230, 126, 34',
+      '#e74c3c': '231, 76, 60',
+      '#9b59b6': '155, 89, 182',
+      '#2ecc71': '46, 204, 113'
+    };
+    return colors[hex] || '230, 126, 34';
+  }
+
+  function clearRulerVisuals() {
+    S.rulerLines.forEach(line => remove(line));
+    S.rulerLines = [];
+
+    S.measurementLabels.forEach(label => remove(label));
+    S.measurementLabels = [];
+  }
+
   /*  CLEANUP  */
   function cleanup() {
     console.log('[DOM Inspector] Cleaning up...');
@@ -2687,6 +3173,11 @@ ${d.selector} {
 
     detachEventListeners();
     stopDrag();
+    // Cleanup ruler mode
+    if (S.rulerMode) {
+      stopRulerMode();
+    }
+    clearRulerVisuals();
 
     // Exit responsive mode if active
     if (S.responsiveMode) {
@@ -2778,6 +3269,15 @@ ${d.selector} {
     window.__DOM_INSPECTOR__ = false;
 
     console.log('[DOM Inspector] Cleanup complete');
+
+    // Remove ruler button
+    const rulerBtn = document.getElementById("dom-ruler-btn");
+    if (rulerBtn) remove(rulerBtn);
+
+    S.rulerMode = false;
+    S.rulerLines = [];
+    S.measurementLabels = [];
+    S.firstSelectedElement = null;
   }
 
   /*  MESSAGES  */
@@ -2801,4 +3301,5 @@ ${d.selector} {
   console.log('  ✓ Grid/Flex visual helpers');
   console.log('  ✓ Performance-safe RAF throttling');
   console.log('  ✓ Responsive Design Testing');
+  console.log('  ✓ Ruler & Distance Measurement');
 })();
