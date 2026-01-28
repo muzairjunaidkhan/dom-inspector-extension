@@ -995,13 +995,12 @@ ${d.selector} {
       S.inspectBtn.style.transform = "none";
     }
     initializeResizeObserver();
-    // attachEventListeners();
+    attachEventListeners();
 
-    // NEW: Enable iframe inspector if in responsive mode
     if (S.responsiveMode && S.viewportFrame?.iframe) {
-      enableIframeInspector();
-    } else {
-      attachEventListeners();
+      try {
+        S.viewportFrame.iframe.contentWindow.postMessage({ type: 'INSPECTOR_START' }, '*');
+      } catch (e) { }
     }
   }
 
@@ -1186,10 +1185,11 @@ ${d.selector} {
   }
 
 
-
-  // NEW RESPONSIVE DESIGN TESTING
+  // NEW RESPONSIVE DESIGN TESTING - PROPER IMPLEMENTATION
   function createViewportFrame() {
     if (S.viewportFrame) return;
+
+    console.log('[DOM Inspector] Creating viewport frame...');
 
     // Background overlay
     const overlay = document.createElement("div");
@@ -1219,66 +1219,70 @@ ${d.selector} {
       boxShadow: "0 20px 60px rgba(0,0,0,0.8)",
       display: "flex",
       flexDirection: "column",
-      alignItems: "center"
+      alignItems: "center",
+      transition: "transform 0.3s ease"
     });
 
-    // Iframe for content isolation
+    // Iframe - LOAD ACTUAL URL
     const iframe = document.createElement("iframe");
     iframe.className = "di-viewport-iframe";
     Object.assign(iframe.style, {
       border: "none",
       background: "#fff",
       display: "block",
-      borderRadius: "4px"
+      borderRadius: "4px",
+      width: S.currentViewport.width + "px",
+      height: S.currentViewport.height + "px"
     });
 
     // Loading indicator
     const loadingIndicator = document.createElement("div");
     loadingIndicator.className = "di-loading-indicator";
     loadingIndicator.innerHTML = `
+    <div style="
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      z-index: 1;
+    ">
       <div style="
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        text-align: center;
-        color: #666;
-        font-family: system-ui, sans-serif;
-        display: flex;
-      ">
-        <div style="
-          width: 50px;
-          height: 50px;
-          border: 4px solid #f3f3f3;
-          border-top: 4px solid #007acc;
-          border-radius: 50%;
-          margin: 0 auto 20px;
-          animation: spin 1s linear infinite;
-        "></div>
-        <div>Loading responsive view...</div>
-      </div>
-      <style>
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      </style>
-    `;
+        width: 50px;
+        height: 50px;
+        border: 4px solid rgba(255,255,255,0.1);
+        border-top: 4px solid #007acc;
+        border-radius: 50%;
+        margin: 0 auto 20px;
+        animation: spin 1s linear infinite;
+      "></div>
+      <div style="font-size: 14px;">Loading ${S.currentViewport.width}×${S.currentViewport.height} viewport...</div>
+    </div>
+    <style>
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  `;
     Object.assign(loadingIndicator.style, {
       position: "absolute",
       top: "0",
       left: "0",
       width: "100%",
       height: "100%",
-      background: "#fff",
+      background: "rgba(0,0,0,0.8)",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      zIndex: "1"
+      zIndex: "99991",
+      pointerEvents: "none"
     });
 
-    frameContainer.appendChild(loadingIndicator);
     frameContainer.appendChild(iframe);
+    frameContainer.appendChild(loadingIndicator);
     overlay.appendChild(frameContainer);
 
     // Enhanced Chrome DevTools-style Toolbar
@@ -1306,7 +1310,7 @@ ${d.selector} {
       boxSizing: "border-box"
     });
 
-    // Current dimensions display (left side)
+    // Current dimensions display
     const dimensionsDisplay = document.createElement("div");
     dimensionsDisplay.className = "di-toolbar-dimensions";
     dimensionsDisplay.style.cssText = "display: flex; align-items: center; gap: 8px; min-width: 150px;";
@@ -1317,7 +1321,6 @@ ${d.selector} {
     </span>
   `;
 
-    // Separator
     const separator1 = createSeparator();
 
     // Custom dimensions input
@@ -1329,7 +1332,6 @@ ${d.selector} {
     const heightInput = createDimensionInput("di-custom-height", S.currentViewport.height, "H");
 
     const applyBtn = createToolbarButton("Apply", () => {
-      // Get the actual input elements, not containers
       const wInput = document.getElementById("di-custom-width");
       const hInput = document.getElementById("di-custom-height");
 
@@ -1339,36 +1341,27 @@ ${d.selector} {
 
         if (w >= 320 && h >= 240) {
           applyViewport({ name: 'Custom', width: w, height: h, type: 'custom' });
-        } else {
-          console.warn('[DOM Inspector] Invalid dimensions. Min: 320x240');
         }
       }
     });
-    applyBtn.className = "di-toolbar-apply-btn";
     applyBtn.style.padding = "4px 10px";
     applyBtn.style.background = "#007acc";
-    applyBtn.onmouseenter = () => applyBtn.style.background = "#005a9e";
-    applyBtn.onmouseleave = () => applyBtn.style.background = "#007acc";
 
     customDimensionsContainer.append(widthInput, heightInput, applyBtn);
 
-    // Separator
     const separator2 = createSeparator();
 
     // Device presets dropdown
     const presetDropdown = createPresetDropdown();
 
-    // Separator
     const separator3 = createSeparator();
 
     // Zoom controls
     const zoomContainer = document.createElement("div");
-    zoomContainer.className = "di-toolbar-zoom";
     zoomContainer.style.cssText = "display: flex; align-items: center; gap: 6px;";
 
     const zoomLabel = document.createElement("span");
-    zoomLabel.style.color = "#999";
-    zoomLabel.style.fontSize = "11px";
+    zoomLabel.style.cssText = "color: #999; font-size: 11px;";
     zoomLabel.textContent = "Zoom:";
 
     const zoomValue = document.createElement("span");
@@ -1382,7 +1375,6 @@ ${d.selector} {
 
     zoomContainer.append(zoomLabel, zoomOut, zoomValue, zoomIn, zoomReset);
 
-    // Separator
     const separator4 = createSeparator();
 
     // Rotate button
@@ -1394,38 +1386,24 @@ ${d.selector} {
         height: temp
       });
     });
-    rotateBtn.className = "di-toolbar-rotate-btn";
     rotateBtn.title = "Rotate viewport";
 
-    // Separator
     const separator5 = createSeparator();
 
-    // Touch mode toggle
-    const touchToggle = document.createElement("label");
-    touchToggle.className = "di-toolbar-touch-toggle";
-    touchToggle.style.cssText = "display: flex; align-items: center; gap: 6px; cursor: pointer;";
-    touchToggle.title = "Simulate touch events";
+    // Reload button
+    const reloadBtn = createToolbarButton("↻ Reload", () => {
+      if (S.viewportFrame?.iframe) {
+        S.viewportFrame.iframe.src = S.viewportFrame.iframe.src;
+      }
+    });
+    reloadBtn.title = "Reload iframe content";
 
-    const touchCheckbox = document.createElement("input");
-    touchCheckbox.type = "checkbox";
-    touchCheckbox.id = "di-touch-mode";
-    touchCheckbox.checked = true;
-    touchCheckbox.style.cursor = "pointer";
-
-    const touchLabel = document.createElement("span");
-    touchLabel.textContent = "Touch";
-    touchLabel.style.cssText = "color: #999; font-size: 11px;";
-
-    touchToggle.append(touchCheckbox, touchLabel);
-
-    // Spacer to push close button to right
+    // Spacer
     const spacer = document.createElement("div");
-    spacer.className = "di-toolbar-spacer";
     spacer.style.flex = "1";
 
     // Close button
     const closeBtn = document.createElement("button");
-    closeBtn.className = "di-toolbar-close-btn";
     closeBtn.textContent = "×";
     closeBtn.title = "Exit responsive mode";
     Object.assign(closeBtn.style, {
@@ -1459,7 +1437,7 @@ ${d.selector} {
       separator4,
       rotateBtn,
       separator5,
-      touchToggle,
+      reloadBtn,
       spacer,
       closeBtn
     );
@@ -1476,172 +1454,329 @@ ${d.selector} {
       zoomLevel: 1
     };
 
-    console.log('[DOM Inspector] Viewport frame created, initializing content...');
-    try {
-      initializeIframeContent();
-    } catch (error) {
-      console.error('[DOM Inspector] Failed to initialize:', error);
-      showIframeError(error);
-    }
+    // Setup iframe load handler
+    setupIframeLoad(iframe, loadingIndicator);
+
+    // Load the current URL
+    console.log('[DOM Inspector] Loading URL into iframe:', window.location.href);
+    iframe.src = window.location.href;
   }
 
-  // Initialize iframe with current page content
-  function initializeIframeContent() {
-    const iframe = S.viewportFrame?.iframe;
-    const loadingIndicator = S.viewportFrame?.loadingIndicator;
-
-    if (!iframe) {
-      console.error('[DOM Inspector] Iframe not ready');
-      return;
-    }
-
-    console.log('[DOM Inspector] Starting iframe initialization...');
-
-    // Set iframe src to about:blank to trigger load
-    iframe.src = 'about:blank';
-
+  function setupIframeLoad(iframe, loadingIndicator) {
     iframe.onload = () => {
-      try {
-        const iframeDoc = iframe.contentDocument;
-        const iframeWin = iframe.contentWindow;
+      console.log('[DOM Inspector] Iframe loaded');
 
-        if (!iframeDoc || !iframeWin) {
-          throw new Error('Cannot access iframe document');
+      // Hide loading indicator
+      setTimeout(() => {
+        if (loadingIndicator) {
+          loadingIndicator.style.display = 'none';
         }
 
-        console.log('[DOM Inspector] Iframe loaded, writing content...');
-
-        // Get current page HTML
-        const currentHTML = document.documentElement.outerHTML;
-
-        // Create a temporary container to manipulate HTML
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(currentHTML, 'text/html');
-
-        // Remove all inspector elements from the cloned document
-        const inspectorSelectors = [
-          '.di-inspect-btn',
-          '.di-responsive-btn',
-          '.di-viewport-overlay',
-          '.di-viewport-toolbar',
-          '.di-hover-panel',
-          '.di-selected-panel',
-          '.di-selected-overlay',
-          '.di-box-layer',
-          '.di-grid-overlay',
-          '.di-flex-overlay',
-          '#dom-inspector-btn',
-          '#dom-responsive-btn'
-        ];
-
-        inspectorSelectors.forEach(selector => {
-          doc.querySelectorAll(selector).forEach(el => el.remove());
-        });
-
-        // Update viewport meta
-        let viewportMeta = doc.querySelector('meta[name="viewport"]');
-        if (viewportMeta) {
-          viewportMeta.setAttribute('content', `width=${S.currentViewport.width}, initial-scale=1.0, user-scalable=no`);
-        } else {
-          viewportMeta = doc.createElement('meta');
-          viewportMeta.name = 'viewport';
-          viewportMeta.content = `width=${S.currentViewport.width}, initial-scale=1.0, user-scalable=no`;
-          doc.head.insertBefore(viewportMeta, doc.head.firstChild);
+        // Try to inject inspector into iframe
+        try {
+          injectInspectorIntoIframe(iframe);
+        } catch (error) {
+          console.warn('[DOM Inspector] Could not inject inspector into iframe:', error);
         }
 
-        // Remove CSP that might block content
-        doc.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(el => el.remove());
+      }, 300);
+    };
 
-        // Get the final HTML
-        const finalHTML = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
-
-        // Write to iframe
-        iframeDoc.open();
-        iframeDoc.write(finalHTML);
-        iframeDoc.close();
-
-        console.log('[DOM Inspector] Content written to iframe');
-
-        // Wait a bit for content to render, then hide loading
-        setTimeout(() => {
-          console.log('[DOM Inspector] Hiding loading indicator');
-
-          if (loadingIndicator) {
-            loadingIndicator.style.display = 'none';
-          }
-
-          // Apply viewport dimensions
-          applyViewportToIframe(S.currentViewport);
-
-          console.log('[DOM Inspector] Iframe initialized successfully');
-
-          // Enable inspector if needed
-          if (S.inspecting) {
-            setTimeout(() => {
-              console.log('[DOM Inspector] Enabling iframe inspector');
-              enableIframeInspector();
-            }, 200);
-          }
-        }, 800); // Increased timeout to ensure content loads
-
-      } catch (error) {
-        console.error('[DOM Inspector] Iframe initialization error:', error);
-        showIframeError(error);
+    iframe.onerror = () => {
+      console.error('[DOM Inspector] Iframe failed to load');
+      if (loadingIndicator) {
+        loadingIndicator.innerHTML = `
+        <div style="text-align: center; color: #dc3545; font-family: system-ui, sans-serif; padding: 40px;">
+          <h3 style="margin: 0 0 16px 0;">Failed to Load</h3>
+          <p style="margin: 0 0 20px 0; color: #999;">Could not load page in responsive view.</p>
+          <button onclick="window.parent.location.reload()" style="
+            padding: 10px 20px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: system-ui, sans-serif;
+          ">Reload Page</button>
+        </div>
+      `;
       }
     };
-
-    iframe.onerror = (error) => {
-      console.error('[DOM Inspector] Iframe load error:', error);
-      showIframeError(new Error('Failed to load iframe'));
-    };
   }
 
-  function showIframeError(error) {
-    const loadingIndicator = S.viewportFrame?.loadingIndicator;
+  function injectInspectorIntoIframe(iframe) {
+    try {
+      const iframeDoc = iframe.contentDocument;
+      const iframeWin = iframe.contentWindow;
+
+      if (!iframeDoc || !iframeWin) {
+        console.warn('[DOM Inspector] Cannot access iframe content (likely cross-origin)');
+        return;
+      }
+
+      // Check if inspector is already injected
+      if (iframeWin.__DOM_INSPECTOR_CHILD__) {
+        console.log('[DOM Inspector] Already injected into iframe');
+        return;
+      }
+
+      iframeWin.__DOM_INSPECTOR_CHILD__ = true;
+
+      console.log('[DOM Inspector] Injecting inspector into iframe...');
+
+      // Add message listener in iframe to communicate with parent
+      iframeWin.addEventListener('message', (event) => {
+        if (event.data.type === 'INSPECTOR_START') {
+          // Parent wants to start inspecting
+          iframeDoc.body.style.cursor = 'crosshair';
+        } else if (event.data.type === 'INSPECTOR_STOP') {
+          iframeDoc.body.style.cursor = 'default';
+        }
+      });
+
+      // Send hover data to parent on mousemove
+      iframeDoc.addEventListener('mousemove', (e) => {
+        if (!S.inspecting) return;
+
+        const target = e.target;
+        if (isInspectorElement(target)) return;
+
+        const data = getDataFromIframeElement(target, iframe);
+        if (data) {
+          // Update parent's hover panel
+          if (S.hoverPanel) {
+            S.hoverPanel.style.display = 'block';
+            updateHoverPanel(data);
+            positionHoverPanelFixed(data);
+          }
+          updateIframeBoxModelLayers(data);
+        }
+      });
+
+      // Handle clicks in iframe
+      iframeDoc.addEventListener('click', (e) => {
+        if (!S.inspecting) return;
+
+        const target = e.target;
+        if (isInspectorElement(target)) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const data = getDataFromIframeElement(target, iframe);
+        if (data) {
+          addSelected(data);
+          stopInspect();
+        }
+      }, true);
+
+      console.log('[DOM Inspector] Inspector injected successfully');
+
+    } catch (error) {
+      console.error('[DOM Inspector] Failed to inject inspector:', error);
+    }
+  }
+
+  function getDataFromIframeElement(el, iframe) {
+    try {
+      const iframeDoc = iframe.contentDocument;
+      const cs = iframeDoc.defaultView.getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+
+      // Map coordinates from iframe to parent
+      const iframeRect = iframe.getBoundingClientRect();
+      const zoom = S.viewportFrame?.zoomLevel || 1;
+
+      const mappedRect = {
+        top: iframeRect.top + (r.top * zoom),
+        left: iframeRect.left + (r.left * zoom),
+        width: r.width * zoom,
+        height: r.height * zoom,
+        bottom: iframeRect.top + (r.bottom * zoom),
+        right: iframeRect.left + (r.right * zoom)
+      };
+
+      let selector = el.tagName.toLowerCase();
+      if (el.id) selector += "#" + el.id;
+      if (el.className && typeof el.className === 'string') {
+        const classes = el.className.trim().split(/\s+/).filter(c => c && !c.startsWith('di-'));
+        if (classes.length > 0) selector += "." + classes.join(".");
+      }
+
+      const parseBox = (str) => {
+        const parts = str.split(' ').map(p => parseFloat(p) || 0);
+        if (parts.length === 1) return [parts[0], parts[0], parts[0], parts[0]];
+        if (parts.length === 2) return [parts[0], parts[1], parts[0], parts[1]];
+        if (parts.length === 3) return [parts[0], parts[1], parts[2], parts[1]];
+        return parts;
+      };
+
+      return {
+        el,
+        rect: mappedRect,
+        selector,
+        path: getElementPath(el),
+        fontSize: cs.fontSize,
+        color: cs.color,
+        background: cs.backgroundColor,
+        margin: cs.margin,
+        marginValues: parseBox(cs.margin),
+        padding: cs.padding,
+        paddingValues: parseBox(cs.padding),
+        borderValues: parseBox(cs.borderWidth),
+        width: Math.round(r.width) + "px",
+        height: Math.round(r.height) + "px",
+        display: cs.display,
+        position: cs.position,
+        top: cs.top,
+        left: cs.left,
+        right: cs.right,
+        bottom: cs.bottom,
+        zIndex: cs.zIndex,
+        fontFamily: cs.fontFamily,
+        fontWeight: cs.fontWeight,
+        lineHeight: cs.lineHeight,
+        textAlign: cs.textAlign,
+        letterSpacing: cs.letterSpacing,
+        textTransform: cs.textTransform,
+        textDecoration: cs.textDecoration,
+        border: cs.border,
+        borderRadius: cs.borderRadius,
+        boxShadow: cs.boxShadow,
+        outline: cs.outline,
+        flexDirection: cs.flexDirection,
+        justifyContent: cs.justifyContent,
+        alignItems: cs.alignItems,
+        flexWrap: cs.flexWrap,
+        gap: cs.gap,
+        gridTemplateColumns: cs.gridTemplateColumns,
+        gridTemplateRows: cs.gridTemplateRows,
+        gridGap: cs.gridGap,
+        opacity: cs.opacity,
+        overflow: cs.overflow,
+        cursor: cs.cursor,
+        transition: cs.transition,
+        transform: cs.transform,
+        isIframeElement: true
+      };
+    } catch (error) {
+      console.error('[DOM Inspector] Error getting iframe element data:', error);
+      return null;
+    }
+  }
+
+  function positionHoverPanelFixed(data) {
+    if (!S.hoverPanel) return;
+
+    const r = data.rect;
+    const panelRect = S.hoverPanel.getBoundingClientRect();
+    const OFFSET = 10;
+
+    S.hoverPanel.style.position = "fixed";
+
+    let top = r.top - panelRect.height - OFFSET;
+    let left = r.left;
+
+    // Keep panel in viewport
+    if (top < 60) { // Below toolbar
+      top = r.bottom + OFFSET;
+    }
+
+    if (left + panelRect.width > window.innerWidth - 20) {
+      left = window.innerWidth - panelRect.width - 20;
+    }
+
+    if (left < 20) left = 20;
+
+    S.hoverPanel.style.top = top + "px";
+    S.hoverPanel.style.left = left + "px";
+  }
+
+  function applyViewport(preset) {
+    if (!S.responsiveMode || !S.viewportFrame) return;
+
+    console.log('[DOM Inspector] Applying viewport:', preset);
+
+    S.currentViewport = { ...preset };
+
+    const iframe = S.viewportFrame.iframe;
+    const loadingIndicator = S.viewportFrame.loadingIndicator;
+
+    // Show loading
     if (loadingIndicator) {
-      loadingIndicator.innerHTML = `
-      <div style="text-align: center; color: #dc3545; font-family: system-ui, sans-serif; padding: 40px;">
-        <h3 style="margin: 0 0 16px 0;">Failed to Load Responsive View</h3>
-        <p style="margin: 0 0 8px 0; color: #999;">${error.message}</p>
-        <p style="margin: 0 0 20px 0; color: #666; font-size: 12px;">Try refreshing the page and entering responsive mode again.</p>
-        <button onclick="location.reload()" style="
-          margin-top: 20px;
-          padding: 10px 20px;
-          background: #007acc;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-family: system-ui, sans-serif;
-          font-size: 13px;
-        ">Reload Page</button>
-      </div>
-    `;
+      loadingIndicator.style.display = 'flex';
+      loadingIndicator.querySelector('div div:last-child').textContent =
+        `Loading ${preset.width}×${preset.height} viewport...`;
     }
+
+    // Resize iframe
+    iframe.style.width = preset.width + "px";
+    iframe.style.height = preset.height + "px";
+
+    // Update UI
+    updateViewportDisplays(preset);
+
+    // Auto-fit zoom
+    autoFitZoom(preset);
+
+    // Reload iframe to apply new dimensions
+    setTimeout(() => {
+      iframe.src = iframe.src;
+    }, 100);
   }
 
-  // Helper function to show errors
-  function showIframeError(error) {
-    if (S.viewportFrame?.loadingIndicator) {
-      S.viewportFrame.loadingIndicator.innerHTML = `
-      <div style="text-align: center; color: #dc3545; font-family: system-ui, sans-serif; padding: 40px;">
-        <h3 style="margin: 0 0 16px 0;">Failed to Load Responsive View</h3>
-        <p style="margin: 0 0 8px 0; color: #999;">${error.message}</p>
-        <button onclick="location.reload()" style="
-          margin-top: 20px;
-          padding: 10px 20px;
-          background: #007acc;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-family: system-ui, sans-serif;
-          font-size: 13px;
-        ">Reload Page</button>
-      </div>
-    `;
-    }
+  function enterResponsiveMode() {
+    if (S.responsiveMode) return;
+
+    console.log('[DOM Inspector] Entering responsive mode...');
+
+    S.responsiveMode = true;
+    setState(STATES.SELECTED);
+
+    // Store original body overflow
+    S.originalBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    // Set initial viewport
+    S.currentViewport = {
+      name: 'Current',
+      width: Math.min(window.innerWidth - 100, 1920),
+      height: Math.min(window.innerHeight - 100, 1080),
+      type: 'desktop'
+    };
+
+    createViewportFrame();
+
+    console.log('[DOM Inspector] Responsive mode activated');
   }
+
+  function exitResponsiveMode() {
+    if (!S.responsiveMode) return;
+
+    console.log('[DOM Inspector] Exiting responsive mode...');
+
+    S.responsiveMode = false;
+
+    // Restore body overflow
+    if (S.originalBodyOverflow !== undefined) {
+      document.body.style.overflow = S.originalBodyOverflow;
+      S.originalBodyOverflow = undefined;
+    }
+
+    // Remove viewport frame
+    if (S.viewportFrame) {
+      remove(S.viewportFrame.overlay);
+      remove(S.viewportFrame.toolbar);
+      S.viewportFrame = null;
+    }
+
+    setState(STATES.IDLE);
+
+    console.log('[DOM Inspector] Responsive mode deactivated');
+  }
+
+  // Keep existing helper functions: createSeparator, createDimensionInput, createToolbarButton, createPresetDropdown, adjustZoom, setZoom, autoFitZoom, updateViewportDisplays
+
 
   // Helper: Create dimension input
   function createDimensionInput(id, value, label) {
@@ -1785,67 +1920,6 @@ ${d.selector} {
   }
 
 
-  // Handle CSP and other errors gracefully
-  function suppressIframeErrors() {
-    const iframe = S.viewportFrame?.iframe;
-    if (!iframe || !iframe.contentWindow) return;
-
-    const iframeWin = iframe.contentWindow;
-
-    try {
-      // Suppress CSP and connection errors
-      iframeWin.addEventListener('error', (e) => {
-        const errorMessage = e.message || e.error?.message || '';
-
-        // Suppress specific known errors
-        const suppressPatterns = [
-          'Content Security Policy',
-          'Refused to load',
-          'Refused to execute',
-          'Refused to connect',
-          'connection',
-          'Receiving end does not exist',
-          'Extension context invalidated'
-        ];
-
-        const shouldSuppress = suppressPatterns.some(pattern =>
-          errorMessage.includes(pattern)
-        );
-
-        if (shouldSuppress) {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('[DOM Inspector] Suppressed error:', errorMessage.substring(0, 100));
-          return false;
-        }
-      }, true);
-
-      // Suppress unhandled rejections
-      iframeWin.addEventListener('unhandledrejection', (e) => {
-        const reason = e.reason?.message || e.reason || '';
-
-        const suppressPatterns = [
-          'connection',
-          'Receiving end does not exist',
-          'Extension context',
-          'Could not establish connection'
-        ];
-
-        const shouldSuppress = suppressPatterns.some(pattern =>
-          reason.toString().includes(pattern)
-        );
-
-        if (shouldSuppress) {
-          e.preventDefault();
-          console.log('[DOM Inspector] Suppressed rejection:', reason.toString().substring(0, 100));
-        }
-      });
-
-      console.log('[DOM Inspector] Error suppression enabled');
-    } catch (error) {
-      console.warn('[DOM Inspector] Could not set up error suppression:', error);
-    }
-  }
 
   // Zoom controls
   function adjustZoom(delta) {
@@ -1955,112 +2029,9 @@ ${d.selector} {
     }
   }
 
-  // Enable inspector to work inside iframe
-  function enableIframeInspector() {
-    const iframe = S.viewportFrame?.iframe;
-    if (!iframe || !iframe.contentDocument) return;
+  
 
 
-    try {
-      const iframeDoc = iframe.contentDocument;
-      const iframeWin = iframe.contentWindow;
-
-      // Attach event listeners to iframe document
-      const iframeMouseMove = (e) => {
-        if (!S.inspecting) return;
-
-        const target = e.target;
-        if (isInspectorElement(target)) return;
-
-        // Map iframe coordinates to parent
-        const iframeRect = iframe.getBoundingClientRect();
-        const zoom = S.viewportFrame.zoomLevel;
-
-        const mappedEvent = {
-          target: target,
-          clientX: e.clientX,
-          clientY: e.clientY,
-          pageX: e.pageX,
-          pageY: e.pageY
-        };
-
-        handleIframeMouseMove(mappedEvent);
-      };
-
-      const iframeClick = (e) => {
-        if (!S.inspecting) return;
-
-        const target = e.target;
-        if (isInspectorElement(target)) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        handleIframeClick(target);
-      };
-
-      const iframeKeyDown = (e) => {
-        if (!S.inspecting) return;
-
-        if (e.key === "Escape") {
-          e.preventDefault();
-          stopInspect();
-        } else if (e.key === "c" || e.key === "C") {
-          if (S.lastHoveredIframeElement) {
-            e.preventDefault();
-            const data = getDataFromIframeElement(S.lastHoveredIframeElement);
-            navigator.clipboard.writeText(cssText(data));
-            showCopyNotification();
-          }
-        }
-      };
-
-      iframeDoc.addEventListener("mousemove", iframeMouseMove);
-      iframeDoc.addEventListener("click", iframeClick, true);
-      iframeDoc.addEventListener("keydown", iframeKeyDown);
-
-      // Touch event simulation
-      const touchCheckbox = document.getElementById("di-touch-mode");
-      if (touchCheckbox && touchCheckbox.checked) {
-        enableTouchSimulation(iframeDoc);
-      }
-
-      // Store handlers for cleanup
-      S.iframeHandlers = {
-        mousemove: iframeMouseMove,
-        click: iframeClick,
-        keydown: iframeKeyDown
-      };
-
-      // Set cursor in iframe
-      iframeDoc.body.style.cursor = "crosshair";
-
-      console.log('[DOM Inspector] Iframe inspector enabled');
-    } catch (error) {
-      console.error('[DOM Inspector] Failed to enable iframe inspector:', error);
-    }
-  }
-  function handleIframeMouseMove(e) {
-    if (!S.viewportFrame?.iframe) return;
-
-    S.lastHoveredIframeElement = e.target;
-
-    const data = getDataFromIframeElement(e.target);
-
-    // Create overlay in parent document (positioned over iframe)
-    updateIframeBoxModelLayers(data);
-
-    if (S.hoverPanel) {
-      S.hoverPanel.style.display = "block";
-      updateHoverPanel(data);
-      positionHoverPanelForIframe(data);
-    }
-  }
-  function handleIframeClick(target) {
-    const data = getDataFromIframeElement(target);
-    addSelected(data);
-    stopInspect();
-  }
   function getDataFromIframeElement(el) {
     const iframe = S.viewportFrame?.iframe;
     if (!iframe) return null;
@@ -2412,46 +2383,46 @@ ${d.selector} {
     setTimeout(() => remove(notification), 1500);
   }
   // Touch event simulation
-  function enableTouchSimulation(iframeDoc) {
-    // Convert mouse events to touch events
-    iframeDoc.addEventListener('mousedown', (e) => {
-      const touch = createTouchEvent('touchstart', e);
-      e.target.dispatchEvent(touch);
-    }, true);
+  // function enableTouchSimulation(iframeDoc) {
+  //   // Convert mouse events to touch events
+  //   iframeDoc.addEventListener('mousedown', (e) => {
+  //     const touch = createTouchEvent('touchstart', e);
+  //     e.target.dispatchEvent(touch);
+  //   }, true);
 
-    iframeDoc.addEventListener('mousemove', (e) => {
-      if (e.buttons === 1) {
-        const touch = createTouchEvent('touchmove', e);
-        e.target.dispatchEvent(touch);
-      }
-    }, true);
-    iframeDoc.addEventListener('mouseup', (e) => {
-      const touch = createTouchEvent('touchend', e);
-      e.target.dispatchEvent(touch);
-    }, true);
-  }
-  function createTouchEvent(type, mouseEvent) {
-    const touch = new Touch({
-      identifier: 0,
-      target: mouseEvent.target,
-      clientX: mouseEvent.clientX,
-      clientY: mouseEvent.clientY,
-      pageX: mouseEvent.pageX,
-      pageY: mouseEvent.pageY,
-      screenX: mouseEvent.screenX,
-      screenY: mouseEvent.screenY,
-      radiusX: 10,
-      radiusY: 10,
-      force: 0.5
-    });
-    return new TouchEvent(type, {
-      touches: type === 'touchend' ? [] : [touch],
-      targetTouches: type === 'touchend' ? [] : [touch],
-      changedTouches: [touch],
-      bubbles: true,
-      cancelable: true
-    });
-  }
+  //   iframeDoc.addEventListener('mousemove', (e) => {
+  //     if (e.buttons === 1) {
+  //       const touch = createTouchEvent('touchmove', e);
+  //       e.target.dispatchEvent(touch);
+  //     }
+  //   }, true);
+  //   iframeDoc.addEventListener('mouseup', (e) => {
+  //     const touch = createTouchEvent('touchend', e);
+  //     e.target.dispatchEvent(touch);
+  //   }, true);
+  // }
+  // function createTouchEvent(type, mouseEvent) {
+  //   const touch = new Touch({
+  //     identifier: 0,
+  //     target: mouseEvent.target,
+  //     clientX: mouseEvent.clientX,
+  //     clientY: mouseEvent.clientY,
+  //     pageX: mouseEvent.pageX,
+  //     pageY: mouseEvent.pageY,
+  //     screenX: mouseEvent.screenX,
+  //     screenY: mouseEvent.screenY,
+  //     radiusX: 10,
+  //     radiusY: 10,
+  //     force: 0.5
+  //   });
+  //   return new TouchEvent(type, {
+  //     touches: type === 'touchend' ? [] : [touch],
+  //     targetTouches: type === 'touchend' ? [] : [touch],
+  //     changedTouches: [touch],
+  //     bubbles: true,
+  //     cancelable: true
+  //   });
+  // }
 
   function enterResponsiveMode() {
     if (S.responsiveMode) {
