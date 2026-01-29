@@ -633,7 +633,7 @@ ${d.selector} {
     const rulerBtn = document.createElement("button");
     rulerBtn.id = "dom-ruler-btn";
     rulerBtn.className = "di-ruler-btn";
-    rulerBtn.textContent = "📏 Ruler";
+    rulerBtn.textContent = "📏 Distance";
     Object.assign(rulerBtn.style, {
       position: "fixed",
       bottom: "20px",
@@ -672,11 +672,11 @@ ${d.selector} {
       e.stopPropagation();
       if (!S.rulerMode) {
         startRulerMode();
-        rulerBtn.textContent = "❌ Exit Ruler";
+        rulerBtn.textContent = "❌ Exit Distance";
         rulerBtn.style.background = "#dc3545";
       } else {
         stopRulerMode();
-        rulerBtn.textContent = "📏 Ruler";
+        rulerBtn.textContent = "📏 Distance";
         rulerBtn.style.background = "#e67e22";
       }
     };
@@ -2710,7 +2710,7 @@ ${d.selector} {
 
     // Update inspect button
     if (S.inspectBtn) {
-      S.inspectBtn.textContent = "Ruler Active (Esc to exit)";
+      S.inspectBtn.textContent = "Distance Mode (Esc to exit)";
       S.inspectBtn.style.background = "#e67e22";
       S.inspectBtn.disabled = true;
       S.inspectBtn.style.opacity = "0.6";
@@ -2737,6 +2737,13 @@ ${d.selector} {
       S.inspectBtn.style.opacity = "1";
     }
 
+    // Also update ruler button
+    const rulerBtn = document.getElementById("dom-ruler-btn");
+    if (rulerBtn) {
+      rulerBtn.textContent = "📏 Distance";
+      rulerBtn.style.background = "#e67e22";
+    }
+
     // Clear all ruler visuals
     clearRulerVisuals();
 
@@ -2752,10 +2759,12 @@ ${d.selector} {
       const hoveredElement = e.target;
 
       if (S.firstSelectedElement) {
-        // Show distances to all sides of first element
-        showDistanceMeasurements(S.firstSelectedElement, hoveredElement);
+        // If reference is set, show distance to hovered element
+        if (hoveredElement !== S.firstSelectedElement) {
+          showDistanceMeasurements(S.firstSelectedElement, hoveredElement);
+        }
       } else {
-        // Just highlight current element
+        // No reference set - just highlight hovered element
         highlightElementForRuler(hoveredElement);
       }
     };
@@ -2770,19 +2779,21 @@ ${d.selector} {
       const clickedElement = e.target;
 
       if (!S.firstSelectedElement) {
-        // First click - select element
+        // First click - set as reference element
         S.firstSelectedElement = clickedElement;
         highlightSelectedElement(clickedElement);
-        console.log('[DOM Inspector] First element selected, hover over another element');
+        console.log('[DOM Inspector] Reference element selected');
       } else if (clickedElement === S.firstSelectedElement) {
-        // Clicked same element - deselect
+        // Clicked same element - deselect reference
         S.firstSelectedElement = null;
         clearRulerVisuals();
-        console.log('[DOM Inspector] Element deselected');
+        console.log('[DOM Inspector] Reference element cleared');
       } else {
-        // Second click - measure and keep measuring
-        showDistanceMeasurements(S.firstSelectedElement, clickedElement);
-        console.log('[DOM Inspector] Measuring distance between elements');
+        // Clicked different element - replace reference
+        S.firstSelectedElement = clickedElement;
+        clearRulerVisuals();
+        highlightSelectedElement(clickedElement);
+        console.log('[DOM Inspector] Reference element changed');
       }
     };
 
@@ -2795,7 +2806,7 @@ ${d.selector} {
         // Also update button
         const rulerBtn = document.getElementById("dom-ruler-btn");
         if (rulerBtn) {
-          rulerBtn.textContent = "📏 Ruler";
+          rulerBtn.textContent = "📏 Distance";
           rulerBtn.style.background = "#e67e22";
         }
       }
@@ -2876,7 +2887,7 @@ ${d.selector} {
     // Add label
     const label = document.createElement("div");
     label.className = "di-ruler-label";
-    label.textContent = "Reference Element (Click again to deselect)";
+    label.textContent = "Reference Element (Click to change or deselect)";
     Object.assign(label.style, {
       position: "absolute",
       top: (rect.top + window.scrollY - 30) + "px",
@@ -2901,13 +2912,13 @@ ${d.selector} {
   function showDistanceMeasurements(element1, element2) {
     clearRulerVisuals();
 
-    // Keep first element highlighted
+    // Keep reference element highlighted
     highlightSelectedElement(element1);
 
     const rect1 = element1.getBoundingClientRect();
     const rect2 = element2.getBoundingClientRect();
 
-    // Highlight second element
+    // Highlight target element
     const highlight2 = document.createElement("div");
     highlight2.className = "di-ruler-target";
     Object.assign(highlight2.style, {
@@ -2928,197 +2939,470 @@ ${d.selector} {
     // Calculate distances
     const distances = calculateDistances(rect1, rect2);
 
-    // Draw distance lines and labels
-    drawDistanceLine(rect1, rect2, distances, 'top');
-    drawDistanceLine(rect1, rect2, distances, 'right');
-    drawDistanceLine(rect1, rect2, distances, 'bottom');
-    drawDistanceLine(rect1, rect2, distances, 'left');
+    // Draw horizontal distance (X-axis)
+    if (distances.horizontal > 0) {
+      drawHorizontalDistance(rect1, rect2, distances.horizontal);
+    }
 
-    // Draw center-to-center line
-    drawCenterLine(rect1, rect2, distances.centerDistance);
-  }
+    // Draw vertical distance (Y-axis)
+    if (distances.vertical > 0) {
+      drawVerticalDistance(rect1, rect2, distances.vertical);
+    }
 
-  function calculateDistances(rect1, rect2) {
-    // Calculate distances from edges
-    const top = rect2.top - rect1.bottom;
-    const bottom = rect1.top - rect2.bottom;
-    const left = rect2.left - rect1.right;
-    const right = rect1.left - rect2.right;
-
-    // Calculate center-to-center distance
-    const center1X = rect1.left + rect1.width / 2;
-    const center1Y = rect1.top + rect1.height / 2;
-    const center2X = rect2.left + rect2.width / 2;
-    const center2Y = rect2.top + rect2.height / 2;
-
-    const centerDistance = Math.sqrt(
-      Math.pow(center2X - center1X, 2) + Math.pow(center2Y - center1Y, 2)
-    );
-
-    // Overlapping detection
-    const overlapX = !(rect1.right < rect2.left || rect1.left > rect2.right);
-    const overlapY = !(rect1.bottom < rect2.top || rect1.top > rect2.bottom);
-
-    return {
-      top: Math.max(0, top),
-      bottom: Math.max(0, bottom),
-      left: Math.max(0, left),
-      right: Math.max(0, right),
-      centerDistance: Math.round(centerDistance),
-      overlapX,
-      overlapY
-    };
-  }
-
-  function drawDistanceLine(rect1, rect2, distances, side) {
-    const distance = distances[side];
-
-    // Only draw if there's actual spacing (not overlapping in that direction)
-    if (side === 'top' && distance > 0 && rect2.top > rect1.bottom) {
-      const x1 = Math.max(rect1.left, rect2.left);
-      const x2 = Math.min(rect1.right, rect2.right);
-      const centerX = (x1 + x2) / 2;
-
-      // Vertical line
-      const line = createLine(
-        centerX,
-        rect1.bottom + window.scrollY,
-        centerX,
-        rect2.top + window.scrollY
-      );
-      document.body.appendChild(line);
-      S.rulerLines.push(line);
-
-      // Label
-      const label = createDistanceLabel(
-        Math.round(distance) + "px",
-        centerX,
-        (rect1.bottom + rect2.top) / 2 + window.scrollY,
-        '#9b59b6'
-      );
-      document.body.appendChild(label);
-      S.measurementLabels.push(label);
-
-    } else if (side === 'bottom' && distance > 0 && rect1.top > rect2.bottom) {
-      const x1 = Math.max(rect1.left, rect2.left);
-      const x2 = Math.min(rect1.right, rect2.right);
-      const centerX = (x1 + x2) / 2;
-
-      const line = createLine(
-        centerX,
-        rect2.bottom + window.scrollY,
-        centerX,
-        rect1.top + window.scrollY
-      );
-      document.body.appendChild(line);
-      S.rulerLines.push(line);
-
-      const label = createDistanceLabel(
-        Math.round(distance) + "px",
-        centerX,
-        (rect2.bottom + rect1.top) / 2 + window.scrollY,
-        '#9b59b6'
-      );
-      document.body.appendChild(label);
-      S.measurementLabels.push(label);
-
-    } else if (side === 'left' && distance > 0 && rect2.left > rect1.right) {
-      const y1 = Math.max(rect1.top, rect2.top);
-      const y2 = Math.min(rect1.bottom, rect2.bottom);
-      const centerY = (y1 + y2) / 2;
-
-      const line = createLine(
-        rect1.right + window.scrollX,
-        centerY,
-        rect2.left + window.scrollX,
-        centerY
-      );
-      document.body.appendChild(line);
-      S.rulerLines.push(line);
-
-      const label = createDistanceLabel(
-        Math.round(distance) + "px",
-        (rect1.right + rect2.left) / 2 + window.scrollX,
-        centerY + window.scrollY,
-        '#e74c3c'
-      );
-      document.body.appendChild(label);
-      S.measurementLabels.push(label);
-
-    } else if (side === 'right' && distance > 0 && rect1.left > rect2.right) {
-      const y1 = Math.max(rect1.top, rect2.top);
-      const y2 = Math.min(rect1.bottom, rect2.bottom);
-      const centerY = (y1 + y2) / 2;
-
-      const line = createLine(
-        rect2.right + window.scrollX,
-        centerY,
-        rect1.left + window.scrollX,
-        centerY
-      );
-      document.body.appendChild(line);
-      S.rulerLines.push(line);
-
-      const label = createDistanceLabel(
-        Math.round(distance) + "px",
-        (rect2.right + rect1.left) / 2 + window.scrollX,
-        centerY + window.scrollY,
-        '#e74c3c'
-      );
-      document.body.appendChild(label);
-      S.measurementLabels.push(label);
+    // If overlapping, show that information
+    if (distances.overlapX && distances.overlapY) {
+      showOverlapIndicator(rect1, rect2);
     }
   }
 
-  function drawCenterLine(rect1, rect2, distance) {
-    const center1X = rect1.left + rect1.width / 2 + window.scrollX;
-    const center1Y = rect1.top + rect1.height / 2 + window.scrollY;
-    const center2X = rect2.left + rect2.width / 2 + window.scrollX;
-    const center2Y = rect2.top + rect2.height / 2 + window.scrollY;
+  function drawHorizontalDistance(rect1, rect2, distance) {
+    let x1, x2, y;
 
-    // Dashed line from center to center
-    const line = createLine(center1X, center1Y, center2X, center2Y, true);
+    // Determine which element is on the left
+    if (rect1.right <= rect2.left) {
+      // rect2 is to the right of rect1
+      x1 = rect1.right + window.scrollX;
+      x2 = rect2.left + window.scrollX;
+
+      // Calculate Y position - use the overlapping vertical range or midpoint
+      const overlapTop = Math.max(rect1.top, rect2.top);
+      const overlapBottom = Math.min(rect1.bottom, rect2.bottom);
+
+      if (overlapTop < overlapBottom) {
+        // There is vertical overlap - use middle of overlap
+        y = ((overlapTop + overlapBottom) / 2) + window.scrollY;
+      } else {
+        // No vertical overlap - use midpoint between elements
+        y = ((rect1.top + rect1.bottom + rect2.top + rect2.bottom) / 4) + window.scrollY;
+      }
+    } else if (rect2.right <= rect1.left) {
+      // rect2 is to the left of rect1
+      x1 = rect2.right + window.scrollX;
+      x2 = rect1.left + window.scrollX;
+
+      const overlapTop = Math.max(rect1.top, rect2.top);
+      const overlapBottom = Math.min(rect1.bottom, rect2.bottom);
+
+      if (overlapTop < overlapBottom) {
+        y = ((overlapTop + overlapBottom) / 2) + window.scrollY;
+      } else {
+        y = ((rect1.top + rect1.bottom + rect2.top + rect2.bottom) / 4) + window.scrollY;
+      }
+    } else {
+      // Horizontally overlapping - don't draw
+      return;
+    }
+
+    // Draw horizontal line
+    const line = document.createElement("div");
+    line.className = "di-ruler-line";
+    Object.assign(line.style, {
+      position: "absolute",
+      top: y + "px",
+      left: x1 + "px",
+      width: (x2 - x1) + "px",
+      height: "2px",
+      background: "#e74c3c",
+      pointerEvents: "none",
+      zIndex: 99994
+    });
     document.body.appendChild(line);
     S.rulerLines.push(line);
 
-    // Label at midpoint
-    const midX = (center1X + center2X) / 2;
-    const midY = (center1Y + center2Y) / 2;
+    // Draw arrows at ends
+    const arrow1 = createArrow(x1, y, 'left');
+    const arrow2 = createArrow(x2, y, 'right');
+    document.body.appendChild(arrow1);
+    document.body.appendChild(arrow2);
+    S.rulerLines.push(arrow1, arrow2);
 
+    // Draw label
     const label = createDistanceLabel(
-      `${distance}px (center)`,
-      midX,
-      midY,
-      '#2ecc71',
-      true
+      `${distance}px`,
+      (x1 + x2) / 2,
+      y,
+      '#e74c3c'
+    );
+    document.body.appendChild(label);
+    S.measurementLabels.push(label);
+  }
+  function drawVerticalDistance(rect1, rect2, distance) {
+    let y1, y2, x;
+
+    // Determine which element is above
+    if (rect1.bottom <= rect2.top) {
+      // rect2 is below rect1
+      y1 = rect1.bottom + window.scrollY;
+      y2 = rect2.top + window.scrollY;
+
+      // Calculate X position - use the overlapping horizontal range or midpoint
+      const overlapLeft = Math.max(rect1.left, rect2.left);
+      const overlapRight = Math.min(rect1.right, rect2.right);
+
+      if (overlapLeft < overlapRight) {
+        // There is horizontal overlap - use middle of overlap
+        x = ((overlapLeft + overlapRight) / 2) + window.scrollX;
+      } else {
+        // No horizontal overlap - use midpoint between elements
+        x = ((rect1.left + rect1.right + rect2.left + rect2.right) / 4) + window.scrollX;
+      }
+    } else if (rect2.bottom <= rect1.top) {
+      // rect2 is above rect1
+      y1 = rect2.bottom + window.scrollY;
+      y2 = rect1.top + window.scrollY;
+
+      const overlapLeft = Math.max(rect1.left, rect2.left);
+      const overlapRight = Math.min(rect1.right, rect2.right);
+
+      if (overlapLeft < overlapRight) {
+        x = ((overlapLeft + overlapRight) / 2) + window.scrollX;
+      } else {
+        x = ((rect1.left + rect1.right + rect2.left + rect2.right) / 4) + window.scrollX;
+      }
+    } else {
+      // Vertically overlapping - don't draw
+      return;
+    }
+
+    // Draw vertical line
+    const line = document.createElement("div");
+    line.className = "di-ruler-line";
+    Object.assign(line.style, {
+      position: "absolute",
+      top: y1 + "px",
+      left: x + "px",
+      width: "2px",
+      height: (y2 - y1) + "px",
+      background: "#9b59b6",
+      pointerEvents: "none",
+      zIndex: 99994
+    });
+    document.body.appendChild(line);
+    S.rulerLines.push(line);
+
+    // Draw arrows at ends
+    const arrow1 = createArrow(x, y1, 'up');
+    const arrow2 = createArrow(x, y2, 'down');
+    document.body.appendChild(arrow1);
+    document.body.appendChild(arrow2);
+    S.rulerLines.push(arrow1, arrow2);
+
+    // Draw label
+    const label = createDistanceLabel(
+      `${distance}px`,
+      x,
+      (y1 + y2) / 2,
+      '#9b59b6'
     );
     document.body.appendChild(label);
     S.measurementLabels.push(label);
   }
 
-  function createLine(x1, y1, x2, y2, dashed = false) {
-    const line = document.createElement("div");
-    line.className = "di-ruler-line";
+  function createArrow(x, y, direction) {
+    const arrow = document.createElement("div");
+    arrow.className = "di-ruler-arrow";
 
-    const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-    const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+    const size = 6;
+    let borderStyle = '';
 
-    Object.assign(line.style, {
+    switch (direction) {
+      case 'left':
+        borderStyle = `${size}px solid transparent; border-right: ${size}px solid #e74c3c`;
+        x = x - size;
+        y = y - size;
+        break;
+      case 'right':
+        borderStyle = `${size}px solid transparent; border-left: ${size}px solid #e74c3c`;
+        x = x;
+        y = y - size;
+        break;
+      case 'up':
+        borderStyle = `${size}px solid transparent; border-bottom: ${size}px solid #9b59b6`;
+        x = x - size;
+        y = y - size;
+        break;
+      case 'down':
+        borderStyle = `${size}px solid transparent; border-top: ${size}px solid #9b59b6`;
+        x = x - size;
+        y = y;
+        break;
+    }
+
+    Object.assign(arrow.style, {
       position: "absolute",
-      top: y1 + "px",
-      left: x1 + "px",
-      width: length + "px",
-      height: dashed ? "2px" : "2px",
-      background: dashed ? "transparent" : "#e67e22",
-      borderTop: dashed ? "2px dashed #2ecc71" : "none",
-      transformOrigin: "0 0",
-      transform: `rotate(${angle}deg)`,
+      top: y + "px",
+      left: x + "px",
+      width: "0",
+      height: "0",
+      border: borderStyle,
       pointerEvents: "none",
-      zIndex: 99994
+      zIndex: 99995
     });
 
-    return line;
+    return arrow;
   }
+
+  function showOverlapIndicator(rect1, rect2) {
+    // Calculate overlap region
+    const overlapLeft = Math.max(rect1.left, rect2.left);
+    const overlapRight = Math.min(rect1.right, rect2.right);
+    const overlapTop = Math.max(rect1.top, rect2.top);
+    const overlapBottom = Math.min(rect1.bottom, rect2.bottom);
+
+    const centerX = ((overlapLeft + overlapRight) / 2) + window.scrollX;
+    const centerY = ((overlapTop + overlapBottom) / 2) + window.scrollY;
+
+    const label = createDistanceLabel(
+      "OVERLAPPING",
+      centerX,
+      centerY,
+      '#f39c12',
+      true
+    );
+    label.style.fontSize = "12px";
+    label.style.fontWeight = "700";
+
+    document.body.appendChild(label);
+    S.measurementLabels.push(label);
+  }
+
+  function calculateDistances(rect1, rect2) {
+    // Calculate edge-to-edge distances (can be negative if overlapping)
+    const topDistance = rect2.top - rect1.bottom;     // Distance from rect1 bottom to rect2 top
+    const bottomDistance = rect1.top - rect2.bottom;   // Distance from rect2 bottom to rect1 top
+    const leftDistance = rect2.left - rect1.right;     // Distance from rect1 right to rect2 left
+    const rightDistance = rect1.left - rect2.right;    // Distance from rect2 right to rect1 left
+
+    // Horizontal distance (X-axis) - minimum absolute distance
+    let horizontalDistance = 0;
+    if (rect1.right <= rect2.left) {
+      // rect2 is to the right
+      horizontalDistance = rect2.left - rect1.right;
+    } else if (rect2.right <= rect1.left) {
+      // rect2 is to the left
+      horizontalDistance = rect1.left - rect2.right;
+    } else {
+      // Overlapping horizontally - distance is 0 or negative (inside)
+      const leftOverlap = rect1.left - rect2.left;
+      const rightOverlap = rect2.right - rect1.right;
+      // If rect2 is inside rect1
+      if (rect2.left >= rect1.left && rect2.right <= rect1.right) {
+        horizontalDistance = Math.min(
+          Math.abs(rect2.left - rect1.left),
+          Math.abs(rect1.right - rect2.right)
+        );
+      }
+      // If rect1 is inside rect2
+      else if (rect1.left >= rect2.left && rect1.right <= rect2.right) {
+        horizontalDistance = Math.min(
+          Math.abs(rect1.left - rect2.left),
+          Math.abs(rect2.right - rect1.right)
+        );
+      }
+      // Partial overlap
+      else {
+        horizontalDistance = 0;
+      }
+    }
+
+    // Vertical distance (Y-axis) - minimum absolute distance
+    let verticalDistance = 0;
+    if (rect1.bottom <= rect2.top) {
+      // rect2 is below
+      verticalDistance = rect2.top - rect1.bottom;
+    } else if (rect2.bottom <= rect1.top) {
+      // rect2 is above
+      verticalDistance = rect1.top - rect2.bottom;
+    } else {
+      // Overlapping vertically
+      const topOverlap = rect1.top - rect2.top;
+      const bottomOverlap = rect2.bottom - rect1.bottom;
+      // If rect2 is inside rect1
+      if (rect2.top >= rect1.top && rect2.bottom <= rect1.bottom) {
+        verticalDistance = Math.min(
+          Math.abs(rect2.top - rect1.top),
+          Math.abs(rect1.bottom - rect2.bottom)
+        );
+      }
+      // If rect1 is inside rect2
+      else if (rect1.top >= rect2.top && rect1.bottom <= rect2.bottom) {
+        verticalDistance = Math.min(
+          Math.abs(rect1.top - rect2.top),
+          Math.abs(rect2.bottom - rect1.bottom)
+        );
+      }
+      // Partial overlap
+      else {
+        verticalDistance = 0;
+      }
+    }
+
+    // Overlapping detection
+    const overlapX = !(rect1.right <= rect2.left || rect1.left >= rect2.right);
+    const overlapY = !(rect1.bottom <= rect2.top || rect1.top >= rect2.bottom);
+
+    return {
+      horizontal: Math.round(Math.abs(horizontalDistance)),
+      vertical: Math.round(Math.abs(verticalDistance)),
+      overlapX,
+      overlapY,
+      // Keep individual edge distances for detailed measurement if needed
+      topDistance: Math.round(topDistance),
+      bottomDistance: Math.round(bottomDistance),
+      leftDistance: Math.round(leftDistance),
+      rightDistance: Math.round(rightDistance)
+    };
+  }
+
+  // function drawDistanceLine(rect1, rect2, distances, side) {
+  //   const distance = distances[side];
+
+  //   // Only draw if there's actual spacing (not overlapping in that direction)
+  //   if (side === 'top' && distance > 0 && rect2.top > rect1.bottom) {
+  //     const x1 = Math.max(rect1.left, rect2.left);
+  //     const x2 = Math.min(rect1.right, rect2.right);
+  //     const centerX = (x1 + x2) / 2;
+
+  //     // Vertical line
+  //     const line = createLine(
+  //       centerX,
+  //       rect1.bottom + window.scrollY,
+  //       centerX,
+  //       rect2.top + window.scrollY
+  //     );
+  //     document.body.appendChild(line);
+  //     S.rulerLines.push(line);
+
+  //     // Label
+  //     const label = createDistanceLabel(
+  //       Math.round(distance) + "px",
+  //       centerX,
+  //       (rect1.bottom + rect2.top) / 2 + window.scrollY,
+  //       '#9b59b6'
+  //     );
+  //     document.body.appendChild(label);
+  //     S.measurementLabels.push(label);
+
+  //   } else if (side === 'bottom' && distance > 0 && rect1.top > rect2.bottom) {
+  //     const x1 = Math.max(rect1.left, rect2.left);
+  //     const x2 = Math.min(rect1.right, rect2.right);
+  //     const centerX = (x1 + x2) / 2;
+
+  //     const line = createLine(
+  //       centerX,
+  //       rect2.bottom + window.scrollY,
+  //       centerX,
+  //       rect1.top + window.scrollY
+  //     );
+  //     document.body.appendChild(line);
+  //     S.rulerLines.push(line);
+
+  //     const label = createDistanceLabel(
+  //       Math.round(distance) + "px",
+  //       centerX,
+  //       (rect2.bottom + rect1.top) / 2 + window.scrollY,
+  //       '#9b59b6'
+  //     );
+  //     document.body.appendChild(label);
+  //     S.measurementLabels.push(label);
+
+  //   } else if (side === 'left' && distance > 0 && rect2.left > rect1.right) {
+  //     const y1 = Math.max(rect1.top, rect2.top);
+  //     const y2 = Math.min(rect1.bottom, rect2.bottom);
+  //     const centerY = (y1 + y2) / 2;
+
+  //     const line = createLine(
+  //       rect1.right + window.scrollX,
+  //       centerY,
+  //       rect2.left + window.scrollX,
+  //       centerY
+  //     );
+  //     document.body.appendChild(line);
+  //     S.rulerLines.push(line);
+
+  //     const label = createDistanceLabel(
+  //       Math.round(distance) + "px",
+  //       (rect1.right + rect2.left) / 2 + window.scrollX,
+  //       centerY + window.scrollY,
+  //       '#e74c3c'
+  //     );
+  //     document.body.appendChild(label);
+  //     S.measurementLabels.push(label);
+
+  //   } else if (side === 'right' && distance > 0 && rect1.left > rect2.right) {
+  //     const y1 = Math.max(rect1.top, rect2.top);
+  //     const y2 = Math.min(rect1.bottom, rect2.bottom);
+  //     const centerY = (y1 + y2) / 2;
+
+  //     const line = createLine(
+  //       rect2.right + window.scrollX,
+  //       centerY,
+  //       rect1.left + window.scrollX,
+  //       centerY
+  //     );
+  //     document.body.appendChild(line);
+  //     S.rulerLines.push(line);
+
+  //     const label = createDistanceLabel(
+  //       Math.round(distance) + "px",
+  //       (rect2.right + rect1.left) / 2 + window.scrollX,
+  //       centerY + window.scrollY,
+  //       '#e74c3c'
+  //     );
+  //     document.body.appendChild(label);
+  //     S.measurementLabels.push(label);
+  //   }
+  // }
+
+  // function drawCenterLine(rect1, rect2, distance) {
+  //   const center1X = rect1.left + rect1.width / 2 + window.scrollX;
+  //   const center1Y = rect1.top + rect1.height / 2 + window.scrollY;
+  //   const center2X = rect2.left + rect2.width / 2 + window.scrollX;
+  //   const center2Y = rect2.top + rect2.height / 2 + window.scrollY;
+
+  //   // Dashed line from center to center
+  //   const line = createLine(center1X, center1Y, center2X, center2Y, true);
+  //   document.body.appendChild(line);
+  //   S.rulerLines.push(line);
+
+  //   // Label at midpoint
+  //   const midX = (center1X + center2X) / 2;
+  //   const midY = (center1Y + center2Y) / 2;
+
+  //   const label = createDistanceLabel(
+  //     `${distance}px (center)`,
+  //     midX,
+  //     midY,
+  //     '#2ecc71',
+  //     true
+  //   );
+  //   document.body.appendChild(label);
+  //   S.measurementLabels.push(label);
+  // }
+
+  // function createLine(x1, y1, x2, y2, dashed = false) {
+  //   const line = document.createElement("div");
+  //   line.className = "di-ruler-line";
+
+  //   const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+  //   const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+
+  //   Object.assign(line.style, {
+  //     position: "absolute",
+  //     top: y1 + "px",
+  //     left: x1 + "px",
+  //     width: length + "px",
+  //     height: dashed ? "2px" : "2px",
+  //     background: dashed ? "transparent" : "#e67e22",
+  //     borderTop: dashed ? "2px dashed #2ecc71" : "none",
+  //     transformOrigin: "0 0",
+  //     transform: `rotate(${angle}deg)`,
+  //     pointerEvents: "none",
+  //     zIndex: 99994
+  //   });
+
+  //   return line;
+  // }
 
   function createDistanceLabel(text, x, y, color = '#e67e22', center = false) {
     const label = document.createElement("div");
@@ -3274,6 +3558,9 @@ ${d.selector} {
     const rulerBtn = document.getElementById("dom-ruler-btn");
     if (rulerBtn) remove(rulerBtn);
 
+    if (S.rulerMode) {
+      stopRulerMode();
+    }
     S.rulerMode = false;
     S.rulerLines = [];
     S.measurementLabels = [];
