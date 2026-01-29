@@ -44,7 +44,8 @@
     rulerMode: false,
     rulerLines: [],
     measurementLabels: [],
-    firstSelectedElement: null,
+    outlineMode: false,
+    outlineStyleElement: null,
     handlers: {
       mousemove: null,
       click: null,
@@ -682,6 +683,62 @@ ${d.selector} {
     };
 
     document.body.appendChild(rulerBtn);
+    document.body.appendChild(rulerBtn);
+
+    // ADD OUTLINE MODE BUTTON
+    const outlineBtn = document.createElement("button");
+    outlineBtn.id = "dom-outline-btn";
+    outlineBtn.className = "di-outline-btn";
+    outlineBtn.textContent = "🔍 Outline All";
+    Object.assign(outlineBtn.style, {
+      position: "fixed",
+      bottom: "20px",
+      right: "380px", // Position to the left of distance button
+      zIndex: 100000,
+      padding: "10px 14px",
+      background: "#16a085",
+      color: "#fff",
+      border: "none",
+      borderRadius: "6px",
+      cursor: "pointer",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      fontSize: "13px",
+      fontWeight: "500",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+      transition: "all 0.2s"
+    });
+
+    outlineBtn.onmouseenter = () => {
+      if (!S.outlineMode) {
+        outlineBtn.style.background = "#138d75";
+        outlineBtn.style.transform = "translateY(-1px)";
+        outlineBtn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
+      }
+    };
+
+    outlineBtn.onmouseleave = () => {
+      if (!S.outlineMode) {
+        outlineBtn.style.background = "#16a085";
+        outlineBtn.style.transform = "translateY(0)";
+        outlineBtn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
+      }
+    };
+
+    outlineBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (!S.outlineMode) {
+        startOutlineMode();
+        outlineBtn.textContent = "❌ Exit Outline";
+        outlineBtn.style.background = "#dc3545";
+      } else {
+        stopOutlineMode();
+        outlineBtn.textContent = "🔍 Outline All";
+        outlineBtn.style.background = "#16a085";
+      }
+    };
+
+    document.body.appendChild(outlineBtn);
+
   }
 
   function createBreadcrumb(path, data) {
@@ -2750,6 +2807,128 @@ ${d.selector} {
     // Detach ruler listeners
     detachRulerListeners();
   }
+  /*  OUTLINE MODE  */
+
+  function startOutlineMode() {
+    if (S.outlineMode) return;
+
+    console.log('[DOM Inspector] Starting outline mode...');
+
+    S.outlineMode = true;
+
+    // Create and inject CSS
+    const style = document.createElement("style");
+    style.id = "di-outline-mode-style";
+    style.textContent = `
+      /* Outline all elements */
+      body * {
+        outline: 1px solid rgba(255, 0, 0, 0.3) !important;
+        outline-offset: -1px !important;
+      }
+
+      /* Different colors for different element types */
+      div {
+        outline-color: rgba(255, 0, 0, 0.4) !important;
+      }
+
+      section, article, aside, nav, header, footer, main {
+        outline-color: rgba(0, 150, 255, 0.5) !important;
+        outline-width: 2px !important;
+      }
+
+      p, span, a, strong, em, h1, h2, h3, h4, h5, h6 {
+        outline-color: rgba(0, 200, 0, 0.4) !important;
+      }
+
+      img, video, canvas, svg {
+        outline-color: rgba(255, 150, 0, 0.6) !important;
+        outline-width: 2px !important;
+      }
+
+      ul, ol, li {
+        outline-color: rgba(150, 0, 255, 0.4) !important;
+      }
+
+      input, textarea, select, button, form {
+        outline-color: rgba(255, 200, 0, 0.5) !important;
+        outline-width: 2px !important;
+      }
+
+      table, tr, td, th {
+        outline-color: rgba(0, 255, 255, 0.4) !important;
+      }
+
+      /* Exclude inspector elements */
+      .di-inspect-btn,
+      .di-responsive-btn,
+      .di-ruler-btn,
+      .di-outline-btn,
+      .di-hover-panel,
+      .di-selected-panel,
+      .di-selected-overlay,
+      .di-panel-item,
+      .di-button,
+      .di-box-layer,
+      .di-panel-header,
+      .di-collapse-btn,
+      .di-grid-overlay,
+      .di-flex-overlay,
+      .di-breadcrumb,
+      .di-ruler-highlight,
+      .di-ruler-selected,
+      .di-ruler-target,
+      .di-ruler-line,
+      .di-ruler-arrow,
+      .di-distance-label,
+      .di-viewport-overlay,
+      .di-frame-container,
+      .di-viewport-iframe,
+      .di-viewport-toolbar,
+      .di-loading-indicator {
+        outline: none !important;
+      }
+
+      /* Add legend for color coding */
+      body::before {
+        content: "OUTLINE MODE ACTIVE | 🔴 Divs | 🔵 Semantic | 🟢 Text | 🟠 Media | 🟣 Lists | 🟡 Forms | 🔵 Tables";
+        position: fixed;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.9);
+        color: #fff;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 11px;
+        font-weight: 500;
+        z-index: 99999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        pointer-events: none;
+      }
+    `;
+
+    document.head.appendChild(style);
+    S.outlineStyleElement = style;
+
+    console.log('[DOM Inspector] Outline mode activated - all elements outlined');
+  }
+
+  function stopOutlineMode() {
+    if (!S.outlineMode) return;
+
+    console.log('[DOM Inspector] Stopping outline mode...');
+
+    S.outlineMode = false;
+
+    // Remove the style element
+    if (S.outlineStyleElement) {
+      remove(S.outlineStyleElement);
+      S.outlineStyleElement = null;
+    }
+
+    console.log('[DOM Inspector] Outline mode deactivated');
+  }
 
   function attachRulerListeners() {
     const handleRulerMouseMove = (e) => {
@@ -3557,6 +3736,9 @@ ${d.selector} {
     // Remove ruler button
     const rulerBtn = document.getElementById("dom-ruler-btn");
     if (rulerBtn) remove(rulerBtn);
+    // Remove outline button
+    const outlineBtn = document.getElementById("dom-outline-btn");
+    if (outlineBtn) remove(outlineBtn);
 
     if (S.rulerMode) {
       stopRulerMode();
@@ -3565,6 +3747,12 @@ ${d.selector} {
     S.rulerLines = [];
     S.measurementLabels = [];
     S.firstSelectedElement = null;
+    // Cleanup outline mode
+    if (S.outlineMode) {
+      stopOutlineMode();
+    }
+    S.outlineMode = false;
+    S.outlineStyleElement = null;
   }
 
   /*  MESSAGES  */
@@ -3589,4 +3777,5 @@ ${d.selector} {
   console.log('  ✓ Performance-safe RAF throttling');
   console.log('  ✓ Responsive Design Testing');
   console.log('  ✓ Ruler & Distance Measurement');
+  console.log('  ✓ Outline All Elements Mode');
 })();
