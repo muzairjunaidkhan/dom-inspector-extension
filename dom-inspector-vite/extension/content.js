@@ -728,7 +728,7 @@ ${d.selector} {
     const toggleFabMenu = () => {
       menuOpen = !menuOpen;
       S.fabMenuOpen = menuOpen;
-      
+
       if (menuOpen) {
         fabMenu.style.display = "flex";
         mainFab.style.transform = "rotate(45deg)";
@@ -795,6 +795,7 @@ ${d.selector} {
     // Hide initially
     fabContainer.style.display = "none";
   }
+
 
   function showInspectorButtons() {
     if (!S.buttonsVisible) {
@@ -1968,7 +1969,6 @@ ${d.selector} {
   }
 
 
-
   // Helper: Create dimension input
   function createDimensionInput(id, value, label) {
     const container = document.createElement("div");
@@ -2219,8 +2219,6 @@ ${d.selector} {
       }
     }
   }
-
-
 
 
   function getDataFromIframeElement(el) {
