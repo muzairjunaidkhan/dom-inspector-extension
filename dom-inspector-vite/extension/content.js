@@ -2549,29 +2549,6 @@ ${d.selector} {
     S.hoverPanel.style.top = top + "px";
     S.hoverPanel.style.left = left + "px";
   }
-  function showCopyNotification() {
-    const notification = document.createElement("div");
-    notification.style.cssText = `
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(76, 175, 80, 0.95);
-    color: white;
-    padding: 16px 24px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: bold;
-    z-index: 100001;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-    font-family: system-ui, -apple-system, sans-serif;
-  `;
-    notification.textContent = '✓ CSS Copied to Clipboard!';
-    document.body.appendChild(notification);
-
-    setTimeout(() => remove(notification), 1500);
-  }
-
 
   function enterResponsiveMode() {
     if (S.responsiveMode) {
