@@ -2503,53 +2503,7 @@ ${d.selector} {
     document.body.appendChild(overlay);
     S.gridFlexOverlays.push(overlay);
   }
-  function positionHoverPanelForIframe(data) {
-    if (!S.hoverPanel) return;
-
-    const r = data.rect;
-    const panelRect = S.hoverPanel.getBoundingClientRect();
-    const OFFSET = 10;
-    const VIEWPORT_PADDING = 10;
-
-    let top, left;
-
-    // Position relative to fixed iframe coordinates
-    S.hoverPanel.style.position = "fixed";
-
-    // Try above
-    if (r.top - panelRect.height - OFFSET > VIEWPORT_PADDING) {
-      top = r.top - panelRect.height - OFFSET;
-      left = r.left;
-    }
-    // Try below
-    else if (r.bottom + panelRect.height + OFFSET < window.innerHeight - VIEWPORT_PADDING) {
-      top = r.bottom + OFFSET;
-      left = r.left;
-    }
-    // Try right
-    else if (r.right + panelRect.width + OFFSET < window.innerWidth - VIEWPORT_PADDING) {
-      top = r.top;
-      left = r.right + OFFSET;
-    }
-    // Try left
-    else if (r.left - panelRect.width - OFFSET > VIEWPORT_PADDING) {
-      top = r.top;
-      left = r.left - panelRect.width - OFFSET;
-    }
-    // Fallback: top-left corner
-    else {
-      top = VIEWPORT_PADDING;
-      left = VIEWPORT_PADDING;
-    }
-
-    // Constrain to viewport
-    left = Math.max(VIEWPORT_PADDING, Math.min(left, window.innerWidth - panelRect.width - VIEWPORT_PADDING));
-    top = Math.max(VIEWPORT_PADDING, Math.min(top, window.innerHeight - panelRect.height - VIEWPORT_PADDING));
-
-    S.hoverPanel.style.top = top + "px";
-    S.hoverPanel.style.left = left + "px";
-  }
-
+  
   function enterResponsiveMode() {
     if (S.responsiveMode) {
       console.log('[DOM Inspector] Already in responsive mode');
