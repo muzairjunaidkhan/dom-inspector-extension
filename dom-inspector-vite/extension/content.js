@@ -20,6 +20,8 @@
     hoverPanel: null,
     panelContainer: null,
     inspectBtn: null,
+    buttonsVisible: false,
+    fabMenuOpen: false,
     selectedItems: [],
     boxModelLayers: {},
     panelCollapsed: false,
@@ -44,6 +46,7 @@
     rulerMode: false,
     rulerLines: [],
     measurementLabels: [],
+    firstSelectedElement: null,
     outlineMode: false,
     outlineStyleElement: null,
     handlers: {
@@ -318,7 +321,11 @@ ${d.selector} {
     return el === S.inspectBtn ||
       el === S.hoverPanel ||
       el === S.panelContainer ||
+      (S.inspectBtn && S.inspectBtn.contains(el)) ||
       (S.panelContainer && S.panelContainer.contains(el)) ||
+      el.classList.contains('di-fab-container') ||
+      el.classList.contains('di-fab-menu') ||
+      el.classList.contains('di-fab-menu-item') ||
       el.classList.contains('di-inspect-btn') ||
       el.classList.contains('di-hover-panel') ||
       el.classList.contains('di-selected-panel') ||
@@ -528,217 +535,282 @@ ${d.selector} {
     clearGridFlexOverlays();
   }
 
-  /*  UI CREATION  */
+  /*  UI CREATION - FLOATING ACTION BUTTON  */
   function ensureInspectButton() {
     if (S.inspectBtn) return;
 
-    // Existing inspect button code...
-    const btn = document.createElement("button");
-    btn.id = "dom-inspector-btn";
-    btn.className = "di-inspect-btn";
-    btn.textContent = "Inspect";
-    Object.assign(btn.style, {
+    // Main FAB Container
+    const fabContainer = document.createElement("div");
+    fabContainer.id = "dom-inspector-fab";
+    fabContainer.className = "di-fab-container";
+    Object.assign(fabContainer.style, {
       position: "fixed",
       bottom: "20px",
       right: "20px",
       zIndex: 100000,
-      padding: "10px 14px",
-      background: "#007acc",
-      color: "#fff",
-      border: "none",
-      borderRadius: "6px",
-      cursor: "pointer",
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: "13px",
-      fontWeight: "500",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-      transition: "all 0.2s"
+      fontFamily: "system-ui, -apple-system, sans-serif"
     });
 
-    btn.onmouseenter = () => {
-      if (S.state === STATES.IDLE) {
-        btn.style.background = "#005a9e";
-        btn.style.transform = "translateY(-1px)";
-        btn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
-      }
-    };
-
-    btn.onmouseleave = () => {
-      if (S.state === STATES.IDLE) {
-        btn.style.background = "#007acc";
-        btn.style.transform = "translateY(0)";
-        btn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
-      }
-    };
-
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      if (S.state === STATES.IDLE || S.state === STATES.SELECTED) {
-        startInspect();
-      }
-    };
-    document.body.appendChild(btn);
-    S.inspectBtn = btn;
-
-    // ADD RESPONSIVE MODE BUTTON
-    const responsiveBtn = document.createElement("button");
-    responsiveBtn.id = "dom-responsive-btn";
-    responsiveBtn.className = "di-responsive-btn";
-    responsiveBtn.textContent = "📱 Responsive";
-    Object.assign(responsiveBtn.style, {
-      position: "fixed",
-      bottom: "20px",
-      right: "110px", // Position to the left of inspect button
-      zIndex: 100000,
-      padding: "10px 14px",
-      background: "#6f42c1",
-      color: "#fff",
-      border: "none",
-      borderRadius: "6px",
-      cursor: "pointer",
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: "13px",
-      fontWeight: "500",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-      transition: "all 0.2s"
+    // FAB Menu (hidden by default)
+    const fabMenu = document.createElement("div");
+    fabMenu.className = "di-fab-menu";
+    Object.assign(fabMenu.style, {
+      position: "absolute",
+      bottom: "70px",
+      right: "0",
+      display: "none",
+      flexDirection: "column",
+      gap: "12px",
+      alignItems: "flex-end"
     });
 
-    responsiveBtn.onmouseenter = () => {
-      responsiveBtn.style.background = "#5a32a3";
-      responsiveBtn.style.transform = "translateY(-1px)";
-      responsiveBtn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
+    // Helper function to create FAB menu item
+    const createFabMenuItem = (id, icon, text, color, onClick) => {
+      const item = document.createElement("div");
+      item.className = "di-fab-menu-item";
+      item.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+      `;
+
+      const label = document.createElement("span");
+      label.textContent = text;
+      label.style.cssText = `
+        background: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 500;
+        white-space: nowrap;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      `;
+
+      const button = document.createElement("button");
+      button.id = id;
+      button.innerHTML = icon;
+      Object.assign(button.style, {
+        width: "48px",
+        height: "48px",
+        borderRadius: "50%",
+        border: "none",
+        background: color,
+        color: "#fff",
+        fontSize: "20px",
+        cursor: "pointer",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+        transition: "all 0.2s",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      });
+
+      button.onmouseenter = () => {
+        button.style.transform = "scale(1.1)";
+        button.style.boxShadow = "0 6px 16px rgba(0,0,0,0.4)";
+      };
+
+      button.onmouseleave = () => {
+        button.style.transform = "scale(1)";
+        button.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+      };
+
+      button.onclick = (e) => {
+        e.stopPropagation();
+        onClick();
+      };
+
+      item.appendChild(label);
+      item.appendChild(button);
+      return item;
     };
 
-    responsiveBtn.onmouseleave = () => {
-      responsiveBtn.style.background = "#6f42c1";
-      responsiveBtn.style.transform = "translateY(0)";
-      responsiveBtn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
-    };
+    // Create menu items
+    const inspectItem = createFabMenuItem(
+      "dom-inspector-btn",
+      "🔍",
+      "Inspect Element",
+      "#007acc",
+      () => {
+        if (S.state === STATES.IDLE || S.state === STATES.SELECTED) {
+          startInspect();
+        }
+      }
+    );
 
-    responsiveBtn.onclick = (e) => {
-      e.stopPropagation();
-      if (!S.responsiveMode) {
-        enterResponsiveMode();
-        responsiveBtn.textContent = "❌ Exit Responsive";
-        responsiveBtn.style.background = "#dc3545";
+    const outlineItem = createFabMenuItem(
+      "dom-outline-btn",
+      "⬚",
+      "Outline All",
+      "#16a085",
+      () => {
+        if (!S.outlineMode) {
+          startOutlineMode();
+          document.getElementById("dom-outline-btn").innerHTML = "✕";
+          document.getElementById("dom-outline-btn").parentElement.querySelector("span").textContent = "Exit Outline";
+        } else {
+          stopOutlineMode();
+          document.getElementById("dom-outline-btn").innerHTML = "⬚";
+          document.getElementById("dom-outline-btn").parentElement.querySelector("span").textContent = "Outline All";
+        }
+      }
+    );
+
+    const rulerItem = createFabMenuItem(
+      "dom-ruler-btn",
+      "📏",
+      "Measure Distance",
+      "#e67e22",
+      () => {
+        if (!S.rulerMode) {
+          startRulerMode();
+          document.getElementById("dom-ruler-btn").innerHTML = "✕";
+          document.getElementById("dom-ruler-btn").parentElement.querySelector("span").textContent = "Exit Distance";
+        } else {
+          stopRulerMode();
+          document.getElementById("dom-ruler-btn").innerHTML = "📏";
+          document.getElementById("dom-ruler-btn").parentElement.querySelector("span").textContent = "Measure Distance";
+        }
+      }
+    );
+
+    const responsiveItem = createFabMenuItem(
+      "dom-responsive-btn",
+      "📱",
+      "Responsive Mode",
+      "#6f42c1",
+      () => {
+        if (!S.responsiveMode) {
+          enterResponsiveMode();
+          document.getElementById("dom-responsive-btn").innerHTML = "✕";
+          document.getElementById("dom-responsive-btn").parentElement.querySelector("span").textContent = "Exit Responsive";
+        } else {
+          exitResponsiveMode();
+          document.getElementById("dom-responsive-btn").innerHTML = "📱";
+          document.getElementById("dom-responsive-btn").parentElement.querySelector("span").textContent = "Responsive Mode";
+        }
+      }
+    );
+
+    // Add items to menu in order
+    fabMenu.appendChild(inspectItem);
+    fabMenu.appendChild(outlineItem);
+    fabMenu.appendChild(rulerItem);
+    fabMenu.appendChild(responsiveItem);
+
+    // Main FAB Button
+    const mainFab = document.createElement("button");
+    mainFab.id = "dom-inspector-main-fab";
+    mainFab.innerHTML = "🛠️";
+    Object.assign(mainFab.style, {
+      width: "56px",
+      height: "56px",
+      borderRadius: "50%",
+      border: "none",
+      background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      color: "#fff",
+      fontSize: "24px",
+      cursor: "pointer",
+      boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+      transition: "all 0.3s",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    });
+
+    let menuOpen = false;
+
+    const toggleFabMenu = () => {
+      menuOpen = !menuOpen;
+      S.fabMenuOpen = menuOpen;
+      
+      if (menuOpen) {
+        fabMenu.style.display = "flex";
+        mainFab.style.transform = "rotate(45deg)";
+        mainFab.innerHTML = "✕";
+
+        // Animate menu items
+        const items = fabMenu.querySelectorAll(".di-fab-menu-item");
+        items.forEach((item, index) => {
+          setTimeout(() => {
+            item.style.opacity = "1";
+            item.style.transform = "translateY(0)";
+          }, index * 50);
+        });
       } else {
-        exitResponsiveMode();
-        responsiveBtn.textContent = "📱 Responsive";
-        responsiveBtn.style.background = "#6f42c1";
+        const items = fabMenu.querySelectorAll(".di-fab-menu-item");
+        items.forEach((item, index) => {
+          setTimeout(() => {
+            item.style.opacity = "0";
+            item.style.transform = "translateY(10px)";
+          }, index * 30);
+        });
+
+        setTimeout(() => {
+          fabMenu.style.display = "none";
+          mainFab.style.transform = "rotate(0deg)";
+          mainFab.innerHTML = "🛠️";
+        }, items.length * 30 + 100);
       }
     };
 
-    document.body.appendChild(responsiveBtn);
+    mainFab.onclick = (e) => {
+      e.stopPropagation();
+      toggleFabMenu();
+    };
 
-    // ADD RULER MODE BUTTON
-    const rulerBtn = document.createElement("button");
-    rulerBtn.id = "dom-ruler-btn";
-    rulerBtn.className = "di-ruler-btn";
-    rulerBtn.textContent = "📏 Distance";
-    Object.assign(rulerBtn.style, {
-      position: "fixed",
-      bottom: "20px",
-      right: "240px", // Position to the left of responsive button
-      zIndex: 100000,
-      padding: "10px 14px",
-      background: "#e67e22",
-      color: "#fff",
-      border: "none",
-      borderRadius: "6px",
-      cursor: "pointer",
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: "13px",
-      fontWeight: "500",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-      transition: "all 0.2s"
+    mainFab.onmouseenter = () => {
+      if (!menuOpen) {
+        mainFab.style.transform = "scale(1.1)";
+        mainFab.style.boxShadow = "0 6px 20px rgba(0,0,0,0.4)";
+      }
+    };
+
+    mainFab.onmouseleave = () => {
+      if (!menuOpen) {
+        mainFab.style.transform = "scale(1)";
+        mainFab.style.boxShadow = "0 4px 16px rgba(0,0,0,0.3)";
+      }
+    };
+
+    // Close menu when clicking outside
+    document.addEventListener("click", (e) => {
+      if (menuOpen && !fabContainer.contains(e.target)) {
+        fabContainer.toggleMenu = toggleFabMenu;
+      }
     });
 
-    rulerBtn.onmouseenter = () => {
-      if (!S.rulerMode) {
-        rulerBtn.style.background = "#d35400";
-        rulerBtn.style.transform = "translateY(-1px)";
-        rulerBtn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
+    fabContainer.appendChild(fabMenu);
+    fabContainer.appendChild(mainFab);
+    document.body.appendChild(fabContainer);
+
+    S.inspectBtn = fabContainer;
+    S.toggleFabMenu = toggleFabMenu;
+
+    // Hide initially
+    fabContainer.style.display = "none";
+  }
+
+  function showInspectorButtons() {
+    if (!S.buttonsVisible) {
+      ensureInspectButton();
+      if (S.inspectBtn) {
+        S.inspectBtn.style.display = "block";
+        S.buttonsVisible = true;
       }
-    };
+    }
+  }
 
-    rulerBtn.onmouseleave = () => {
-      if (!S.rulerMode) {
-        rulerBtn.style.background = "#e67e22";
-        rulerBtn.style.transform = "translateY(0)";
-        rulerBtn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
-      }
-    };
-
-    rulerBtn.onclick = (e) => {
-      e.stopPropagation();
-      if (!S.rulerMode) {
-        startRulerMode();
-        rulerBtn.textContent = "❌ Exit Distance";
-        rulerBtn.style.background = "#dc3545";
-      } else {
-        stopRulerMode();
-        rulerBtn.textContent = "📏 Distance";
-        rulerBtn.style.background = "#e67e22";
-      }
-    };
-
-    document.body.appendChild(rulerBtn);
-    document.body.appendChild(rulerBtn);
-
-    // ADD OUTLINE MODE BUTTON
-    const outlineBtn = document.createElement("button");
-    outlineBtn.id = "dom-outline-btn";
-    outlineBtn.className = "di-outline-btn";
-    outlineBtn.textContent = "🔍 Outline All";
-    Object.assign(outlineBtn.style, {
-      position: "fixed",
-      bottom: "20px",
-      right: "380px", // Position to the left of distance button
-      zIndex: 100000,
-      padding: "10px 14px",
-      background: "#16a085",
-      color: "#fff",
-      border: "none",
-      borderRadius: "6px",
-      cursor: "pointer",
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: "13px",
-      fontWeight: "500",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-      transition: "all 0.2s"
-    });
-
-    outlineBtn.onmouseenter = () => {
-      if (!S.outlineMode) {
-        outlineBtn.style.background = "#138d75";
-        outlineBtn.style.transform = "translateY(-1px)";
-        outlineBtn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
-      }
-    };
-
-    outlineBtn.onmouseleave = () => {
-      if (!S.outlineMode) {
-        outlineBtn.style.background = "#16a085";
-        outlineBtn.style.transform = "translateY(0)";
-        outlineBtn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
-      }
-    };
-
-    outlineBtn.onclick = (e) => {
-      e.stopPropagation();
-      if (!S.outlineMode) {
-        startOutlineMode();
-        outlineBtn.textContent = "❌ Exit Outline";
-        outlineBtn.style.background = "#dc3545";
-      } else {
-        stopOutlineMode();
-        outlineBtn.textContent = "🔍 Outline All";
-        outlineBtn.style.background = "#16a085";
-      }
-    };
-
-    document.body.appendChild(outlineBtn);
-
+  function hideInspectorButtons() {
+    if (S.inspectBtn) {
+      S.inspectBtn.style.display = "none";
+      S.buttonsVisible = false;
+    }
   }
 
   function createBreadcrumb(path, data) {
@@ -1104,10 +1176,12 @@ ${d.selector} {
     ensureInspectButton();
     ensureHoverUI();
 
-    if (S.inspectBtn) {
-      S.inspectBtn.textContent = "Inspecting... (Esc to exit)";
-      S.inspectBtn.style.background = "#ff6600";
-      S.inspectBtn.style.transform = "none";
+    // Update inspect button in FAB menu
+    const inspectBtn = document.getElementById("dom-inspector-btn");
+    if (inspectBtn) {
+      inspectBtn.innerHTML = "⏸️";
+      inspectBtn.parentElement.querySelector("span").textContent = "Inspecting... (Esc to exit)";
+      inspectBtn.parentElement.querySelector("button").style.background = "#ff6600";
     }
     initializeResizeObserver();
     attachEventListeners();
@@ -1126,9 +1200,12 @@ ${d.selector} {
     S.inspecting = false;
     document.body.style.cursor = "default";
 
-    if (S.inspectBtn) {
-      S.inspectBtn.textContent = "Inspect";
-      S.inspectBtn.style.background = "#007acc";
+    // Reset inspect button in FAB menu
+    const inspectBtn = document.getElementById("dom-inspector-btn");
+    if (inspectBtn) {
+      inspectBtn.innerHTML = "🔍";
+      inspectBtn.parentElement.querySelector("span").textContent = "Inspect Element";
+      inspectBtn.parentElement.querySelector("button").style.background = "#007acc";
     }
 
     if (S.rafId) {
@@ -2765,13 +2842,15 @@ ${d.selector} {
     S.firstSelectedElement = null;
     document.body.style.cursor = "crosshair";
 
-    // Update inspect button
-    if (S.inspectBtn) {
-      S.inspectBtn.textContent = "Distance Mode (Esc to exit)";
-      S.inspectBtn.style.background = "#e67e22";
-      S.inspectBtn.disabled = true;
-      S.inspectBtn.style.opacity = "0.6";
-    }
+    // Disable other FAB buttons during ruler mode
+    const fabButtons = ["dom-inspector-btn", "dom-responsive-btn"];
+    fabButtons.forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.style.opacity = "0.5";
+        btn.style.pointerEvents = "none";
+      }
+    });
 
     // Attach ruler-specific event listeners
     attachRulerListeners();
@@ -2786,14 +2865,15 @@ ${d.selector} {
     S.firstSelectedElement = null;
     document.body.style.cursor = "default";
 
-    // Restore inspect button
-    if (S.inspectBtn) {
-      S.inspectBtn.textContent = "Inspect";
-      S.inspectBtn.style.background = "#007acc";
-      S.inspectBtn.disabled = false;
-      S.inspectBtn.style.opacity = "1";
-    }
-
+    // Re-enable other FAB buttons
+    const fabButtons = ["dom-inspector-btn", "dom-responsive-btn"];
+    fabButtons.forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.style.opacity = "1";
+        btn.style.pointerEvents = "auto";
+      }
+    });
     // Also update ruler button
     const rulerBtn = document.getElementById("dom-ruler-btn");
     if (rulerBtn) {
@@ -3433,156 +3513,6 @@ ${d.selector} {
     };
   }
 
-  // function drawDistanceLine(rect1, rect2, distances, side) {
-  //   const distance = distances[side];
-
-  //   // Only draw if there's actual spacing (not overlapping in that direction)
-  //   if (side === 'top' && distance > 0 && rect2.top > rect1.bottom) {
-  //     const x1 = Math.max(rect1.left, rect2.left);
-  //     const x2 = Math.min(rect1.right, rect2.right);
-  //     const centerX = (x1 + x2) / 2;
-
-  //     // Vertical line
-  //     const line = createLine(
-  //       centerX,
-  //       rect1.bottom + window.scrollY,
-  //       centerX,
-  //       rect2.top + window.scrollY
-  //     );
-  //     document.body.appendChild(line);
-  //     S.rulerLines.push(line);
-
-  //     // Label
-  //     const label = createDistanceLabel(
-  //       Math.round(distance) + "px",
-  //       centerX,
-  //       (rect1.bottom + rect2.top) / 2 + window.scrollY,
-  //       '#9b59b6'
-  //     );
-  //     document.body.appendChild(label);
-  //     S.measurementLabels.push(label);
-
-  //   } else if (side === 'bottom' && distance > 0 && rect1.top > rect2.bottom) {
-  //     const x1 = Math.max(rect1.left, rect2.left);
-  //     const x2 = Math.min(rect1.right, rect2.right);
-  //     const centerX = (x1 + x2) / 2;
-
-  //     const line = createLine(
-  //       centerX,
-  //       rect2.bottom + window.scrollY,
-  //       centerX,
-  //       rect1.top + window.scrollY
-  //     );
-  //     document.body.appendChild(line);
-  //     S.rulerLines.push(line);
-
-  //     const label = createDistanceLabel(
-  //       Math.round(distance) + "px",
-  //       centerX,
-  //       (rect2.bottom + rect1.top) / 2 + window.scrollY,
-  //       '#9b59b6'
-  //     );
-  //     document.body.appendChild(label);
-  //     S.measurementLabels.push(label);
-
-  //   } else if (side === 'left' && distance > 0 && rect2.left > rect1.right) {
-  //     const y1 = Math.max(rect1.top, rect2.top);
-  //     const y2 = Math.min(rect1.bottom, rect2.bottom);
-  //     const centerY = (y1 + y2) / 2;
-
-  //     const line = createLine(
-  //       rect1.right + window.scrollX,
-  //       centerY,
-  //       rect2.left + window.scrollX,
-  //       centerY
-  //     );
-  //     document.body.appendChild(line);
-  //     S.rulerLines.push(line);
-
-  //     const label = createDistanceLabel(
-  //       Math.round(distance) + "px",
-  //       (rect1.right + rect2.left) / 2 + window.scrollX,
-  //       centerY + window.scrollY,
-  //       '#e74c3c'
-  //     );
-  //     document.body.appendChild(label);
-  //     S.measurementLabels.push(label);
-
-  //   } else if (side === 'right' && distance > 0 && rect1.left > rect2.right) {
-  //     const y1 = Math.max(rect1.top, rect2.top);
-  //     const y2 = Math.min(rect1.bottom, rect2.bottom);
-  //     const centerY = (y1 + y2) / 2;
-
-  //     const line = createLine(
-  //       rect2.right + window.scrollX,
-  //       centerY,
-  //       rect1.left + window.scrollX,
-  //       centerY
-  //     );
-  //     document.body.appendChild(line);
-  //     S.rulerLines.push(line);
-
-  //     const label = createDistanceLabel(
-  //       Math.round(distance) + "px",
-  //       (rect2.right + rect1.left) / 2 + window.scrollX,
-  //       centerY + window.scrollY,
-  //       '#e74c3c'
-  //     );
-  //     document.body.appendChild(label);
-  //     S.measurementLabels.push(label);
-  //   }
-  // }
-
-  // function drawCenterLine(rect1, rect2, distance) {
-  //   const center1X = rect1.left + rect1.width / 2 + window.scrollX;
-  //   const center1Y = rect1.top + rect1.height / 2 + window.scrollY;
-  //   const center2X = rect2.left + rect2.width / 2 + window.scrollX;
-  //   const center2Y = rect2.top + rect2.height / 2 + window.scrollY;
-
-  //   // Dashed line from center to center
-  //   const line = createLine(center1X, center1Y, center2X, center2Y, true);
-  //   document.body.appendChild(line);
-  //   S.rulerLines.push(line);
-
-  //   // Label at midpoint
-  //   const midX = (center1X + center2X) / 2;
-  //   const midY = (center1Y + center2Y) / 2;
-
-  //   const label = createDistanceLabel(
-  //     `${distance}px (center)`,
-  //     midX,
-  //     midY,
-  //     '#2ecc71',
-  //     true
-  //   );
-  //   document.body.appendChild(label);
-  //   S.measurementLabels.push(label);
-  // }
-
-  // function createLine(x1, y1, x2, y2, dashed = false) {
-  //   const line = document.createElement("div");
-  //   line.className = "di-ruler-line";
-
-  //   const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-  //   const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
-
-  //   Object.assign(line.style, {
-  //     position: "absolute",
-  //     top: y1 + "px",
-  //     left: x1 + "px",
-  //     width: length + "px",
-  //     height: dashed ? "2px" : "2px",
-  //     background: dashed ? "transparent" : "#e67e22",
-  //     borderTop: dashed ? "2px dashed #2ecc71" : "none",
-  //     transformOrigin: "0 0",
-  //     transform: `rotate(${angle}deg)`,
-  //     pointerEvents: "none",
-  //     zIndex: 99994
-  //   });
-
-  //   return line;
-  // }
-
   function createDistanceLabel(text, x, y, color = '#e67e22', center = false) {
     const label = document.createElement("div");
     label.className = "di-distance-label";
@@ -3683,14 +3613,13 @@ ${d.selector} {
       S.resizeObserver = null;
     }
 
-    // Remove UI elements
-    remove(S.hoverPanel);
-    remove(S.panelContainer);
-    remove(S.inspectBtn);
-
     // Remove responsive button
     const responsiveBtn = document.getElementById("dom-responsive-btn");
     if (responsiveBtn) remove(responsiveBtn);
+
+    // Remove FAB container (includes all buttons)
+    remove(S.inspectBtn);
+    S.inspectBtn = null;
 
     Object.values(S.boxModelLayers).forEach(layer => remove(layer));
     clearGridFlexOverlays();
@@ -3733,13 +3662,6 @@ ${d.selector} {
 
     console.log('[DOM Inspector] Cleanup complete');
 
-    // Remove ruler button
-    const rulerBtn = document.getElementById("dom-ruler-btn");
-    if (rulerBtn) remove(rulerBtn);
-    // Remove outline button
-    const outlineBtn = document.getElementById("dom-outline-btn");
-    if (outlineBtn) remove(outlineBtn);
-
     if (S.rulerMode) {
       stopRulerMode();
     }
@@ -3759,15 +3681,67 @@ ${d.selector} {
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.type === "START_INSPECT") {
-        startInspect();
+        showInspectorButtons();
       } else if (msg.type === "CLEAR_OVERLAY") {
         cleanup();
+        hideInspectorButtons();
+      } else if (msg.type === "TOGGLE_OUTLINE") {
+        showInspectorButtons();
+        if (!S.outlineMode) {
+          startOutlineMode();
+          const outlineBtn = document.getElementById("dom-outline-btn");
+          if (outlineBtn) {
+            outlineBtn.innerHTML = "✕";
+            outlineBtn.parentElement.querySelector("span").textContent = "Exit Outline";
+          }
+        } else {
+          stopOutlineMode();
+          const outlineBtn = document.getElementById("dom-outline-btn");
+          if (outlineBtn) {
+            outlineBtn.innerHTML = "⬚";
+            outlineBtn.parentElement.querySelector("span").textContent = "Outline All";
+          }
+        }
+      } else if (msg.type === "TOGGLE_RULER") {
+        showInspectorButtons();
+        if (!S.rulerMode) {
+          startRulerMode();
+          const rulerBtn = document.getElementById("dom-ruler-btn");
+          if (rulerBtn) {
+            rulerBtn.innerHTML = "✕";
+            rulerBtn.parentElement.querySelector("span").textContent = "Exit Distance";
+          }
+        } else {
+          stopRulerMode();
+          const rulerBtn = document.getElementById("dom-ruler-btn");
+          if (rulerBtn) {
+            rulerBtn.innerHTML = "📏";
+            rulerBtn.parentElement.querySelector("span").textContent = "Measure Distance";
+          }
+        }
+      } else if (msg.type === "TOGGLE_RESPONSIVE") {
+        showInspectorButtons();
+        if (!S.responsiveMode) {
+          enterResponsiveMode();
+          const responsiveBtn = document.getElementById("dom-responsive-btn");
+          if (responsiveBtn) {
+            responsiveBtn.innerHTML = "✕";
+            responsiveBtn.parentElement.querySelector("span").textContent = "Exit Responsive";
+          }
+        } else {
+          exitResponsiveMode();
+          const responsiveBtn = document.getElementById("dom-responsive-btn");
+          if (responsiveBtn) {
+            responsiveBtn.innerHTML = "📱";
+            responsiveBtn.parentElement.querySelector("span").textContent = "Responsive Mode";
+          }
+        }
       }
     });
   }
+
   // Initialize
   setState(STATES.IDLE);
-  ensureInspectButton();
 
   console.log('[DOM Inspector] Enhanced version initialized with:');
   console.log('  ✓ Element path breadcrumb (clickable)');
