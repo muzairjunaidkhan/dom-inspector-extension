@@ -184,6 +184,81 @@
     return path;
   };
 
+  // NEW FUNCTION - Detects if element has pseudo-state styles
+  const getPseudoStateStyles = (el) => {
+    const pseudoStates = {
+      hover: null,
+      focus: null,
+      active: null,
+      'focus-visible': null
+    };
+
+    try {
+      // Get all stylesheets
+      const sheets = Array.from(document.styleSheets);
+
+      // Helper to check if selector matches element
+      const selectorMatchesElement = (selector, element) => {
+        try {
+          // Remove pseudo-class from selector to test base match
+          const baseSelector = selector.replace(/:(hover|focus|active|focus-visible).*/, '').trim();
+          if (!baseSelector) return false;
+          return element.matches(baseSelector);
+        } catch (e) {
+          return false;
+        }
+      };
+
+      sheets.forEach(sheet => {
+        try {
+          const rules = sheet.cssRules || sheet.rules;
+          if (!rules) return;
+
+          Array.from(rules).forEach(rule => {
+            if (rule.type !== CSSRule.STYLE_RULE) return;
+
+            const selector = rule.selectorText;
+            if (!selector) return;
+
+            // Check each pseudo-state
+            ['hover', 'focus', 'active', 'focus-visible'].forEach(state => {
+              const pseudoRegex = new RegExp(`:${state}\\b`);
+
+              if (pseudoRegex.test(selector) && selectorMatchesElement(selector, el)) {
+                // Found matching pseudo-state rule
+                const cssText = rule.style.cssText;
+
+                if (cssText && cssText.trim()) {
+                  if (!pseudoStates[state]) {
+                    pseudoStates[state] = [];
+                  }
+
+                  // Parse individual properties
+                  const properties = {};
+                  Array.from(rule.style).forEach(prop => {
+                    properties[prop] = rule.style.getPropertyValue(prop);
+                  });
+
+                  pseudoStates[state].push({
+                    selector: selector,
+                    properties: properties,
+                    cssText: cssText
+                  });
+                }
+              }
+            });
+          });
+        } catch (e) {
+          // CORS or other sheet access error - skip
+        }
+      });
+    } catch (error) {
+      console.warn('[DOM Inspector] Error detecting pseudo-states:', error);
+    }
+
+    return pseudoStates;
+  };
+
   const cssText = (d) => `
 ${d.selector} {
   width: ${d.width};
@@ -818,16 +893,19 @@ ${d.selector} {
     const breadcrumb = document.createElement("div");
     breadcrumb.className = "di-breadcrumb";
     breadcrumb.style.cssText = `
-      background: rgba(40, 40, 40, 0.95);
-      padding: 6px 10px;
-      border-radius: 4px;
-      margin-bottom: 8px;
-      font-size: 10px;
-      color: #999;
-      overflow-x: auto;
-      white-space: nowrap;
-      backdrop-filter: blur(10px);
-    `;
+  background: linear-gradient(135deg, rgba(30, 30, 30, 0.8) 0%, rgba(20, 20, 20, 0.8) 100%);
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  font-size: 10px;
+  color: #999;
+  overflow-x: auto;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(79, 195, 247, 0.2);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  font-family: 'Courier New', monospace;
+`;
 
     path.forEach((segment, i) => {
       if (i > 0) {
@@ -877,8 +955,8 @@ ${d.selector} {
     S.hoverPanel.innerHTML = '';
 
     // Add breadcrumb
-    const breadcrumb = createBreadcrumb(data.path, data);
-    S.hoverPanel.appendChild(breadcrumb);
+    // const breadcrumb = createBreadcrumb(data.path, data);
+    // S.hoverPanel.appendChild(breadcrumb);
 
     // Main info
     const mainInfo = document.createElement("div");
@@ -894,7 +972,9 @@ ${d.selector} {
       margin-top: 8px;
       padding-top: 8px;
       border-top: 1px solid #444;
-      font-size: 10px;
+      font-size: 12px;
+      line-height: 1.4;
+      min-width: 200px
     `;
 
     const changedStyles = [];
@@ -2503,7 +2583,7 @@ ${d.selector} {
     document.body.appendChild(overlay);
     S.gridFlexOverlays.push(overlay);
   }
-  
+
   function enterResponsiveMode() {
     if (S.responsiveMode) {
       console.log('[DOM Inspector] Already in responsive mode');
@@ -2562,75 +2642,204 @@ ${d.selector} {
 
   /*  PSEUDO-STATE INSPECTOR  */
   function createPseudoStateToggle(data) {
+    // Detect pseudo-state styles for this element
+    const pseudoStates = getPseudoStateStyles(data.el);
+
+    // Check if element has any pseudo-state styles
+    const hasAnyPseudoStates = Object.values(pseudoStates).some(state => state && state.length > 0);
+
+    // Don't show panel if no pseudo-states exist
+    if (!hasAnyPseudoStates) {
+      return null;
+    }
+
     const container = document.createElement("div");
+    container.className = "di-pseudo-state-panel";
     container.style.cssText = `
-      background: #2d2d2d;
-      padding: 8px;
-      margin: 8px 0;
-      border-radius: 4px;
-    `;
+    background: linear-gradient(135deg, rgba(45, 45, 45, 0.95) 0%, rgba(35, 35, 35, 0.95) 100%);
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 6px;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+  `;
+
+    const header = document.createElement("div");
+    header.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  `;
+
+    const icon = document.createElement("span");
+    icon.textContent = "🎨";
+    icon.style.fontSize = "14px";
 
     const title = document.createElement("div");
-    title.textContent = "Pseudo States:";
-    title.style.cssText = "font-size: 10px; color: #999; margin-bottom: 6px;";
-    container.appendChild(title);
+    title.textContent = "Pseudo States";
+    title.style.cssText = `
+    font-size: 11px;
+    color: #4caf50;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  `;
 
-    const states = ['hover', 'focus', 'active'];
-    const buttonContainer = document.createElement("div");
-    buttonContainer.style.cssText = "display: flex; gap: 6px;";
+    header.appendChild(icon);
+    header.appendChild(title);
+    container.appendChild(header);
+
+    const states = ['hover', 'focus', 'active', 'focus-visible'];
 
     states.forEach(state => {
-      const btn = document.createElement("button");
-      btn.textContent = `:${state}`;
-      btn.className = `di-pseudo-btn di-pseudo-${state}`;
-      Object.assign(btn.style, {
-        padding: "4px 8px",
-        border: "1px solid #555",
-        background: "#3a3a3a",
-        color: "#fff",
+      const stateData = pseudoStates[state];
+      if (!stateData || stateData.length === 0) return; // Skip if no styles for this state
+
+      const stateContainer = document.createElement("div");
+      stateContainer.className = `di-pseudo-${state}-container`;
+      stateContainer.style.cssText = `
+      margin-bottom: 8px;
+      border-left: 3px solid ${getStateColor(state)};
+      padding-left: 8px;
+    `;
+
+      const stateHeader = document.createElement("div");
+      stateHeader.style.cssText = `
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    `;
+
+      const stateLabel = document.createElement("span");
+      stateLabel.textContent = `:${state}`;
+      stateLabel.style.cssText = `
+      font-size: 11px;
+      color: ${getStateColor(state)};
+      font-weight: 600;
+      font-family: monospace;
+    `;
+
+      const toggleBtn = document.createElement("button");
+      toggleBtn.textContent = "Force";
+      toggleBtn.className = `di-pseudo-btn di-pseudo-${state}`;
+      Object.assign(toggleBtn.style, {
+        padding: "3px 8px",
+        border: `1px solid ${getStateColor(state)}`,
+        background: "rgba(255, 255, 255, 0.05)",
+        color: getStateColor(state),
         borderRadius: "3px",
         cursor: "pointer",
         fontSize: "10px",
-        fontFamily: "monospace",
-        transition: "all 0.2s"
+        fontWeight: "500",
+        transition: "all 0.2s",
+        fontFamily: "system-ui, sans-serif"
       });
 
       let isActive = false;
+      const styleId = `di-pseudo-force-${state}-${Date.now()}`;
 
-      btn.onclick = (e) => {
+      toggleBtn.onclick = (e) => {
         e.stopPropagation();
         isActive = !isActive;
 
         if (isActive) {
-          btn.style.background = "#007acc";
-          btn.style.borderColor = "#007acc";
-          data.el.classList.add(`di-force-${state}`);
+          toggleBtn.textContent = "✓ Active";
+          toggleBtn.style.background = getStateColor(state);
+          toggleBtn.style.color = "#fff";
+          toggleBtn.style.fontWeight = "600";
 
-          // Apply pseudo-state styles
-          const styleId = `di-pseudo-style-${state}`;
+          // Apply actual pseudo-state styles
+          const uniqueClass = `di-force-${state}-${Date.now()}`;
+          data.el.classList.add(uniqueClass);
+
           let style = document.getElementById(styleId);
           if (!style) {
             style = document.createElement("style");
             style.id = styleId;
             document.head.appendChild(style);
           }
-          style.textContent = `.di-force-${state} { /* Forced ${state} state */ }`;
 
-          if (state === 'hover') {
-            data.el.style.setProperty('pointer-events', 'auto', 'important');
-          }
+          // Build CSS from detected pseudo-state rules
+          let cssRules = '';
+          stateData.forEach(rule => {
+            const properties = Object.entries(rule.properties)
+              .map(([prop, value]) => `  ${prop}: ${value} !important;`)
+              .join('\n');
+
+            cssRules += `.${uniqueClass} {\n${properties}\n}\n`;
+          });
+
+          style.textContent = cssRules;
+
         } else {
-          btn.style.background = "#3a3a3a";
-          btn.style.borderColor = "#555";
-          data.el.classList.remove(`di-force-${state}`);
+          toggleBtn.textContent = "Force";
+          toggleBtn.style.background = "rgba(255, 255, 255, 0.05)";
+          toggleBtn.style.color = getStateColor(state);
+          toggleBtn.style.fontWeight = "500";
+
+          // Remove forced styles
+          const style = document.getElementById(styleId);
+          if (style) {
+            document.head.removeChild(style);
+          }
+
+          // Remove all classes that start with di-force-{state}
+          const classesToRemove = Array.from(data.el.classList)
+            .filter(c => c.startsWith(`di-force-${state}`));
+          classesToRemove.forEach(c => data.el.classList.remove(c));
         }
       };
 
-      buttonContainer.appendChild(btn);
+      stateHeader.appendChild(stateLabel);
+      stateHeader.appendChild(toggleBtn);
+      stateContainer.appendChild(stateHeader);
+
+      // Show CSS properties for this pseudo-state
+      const cssDisplay = document.createElement("div");
+      cssDisplay.style.cssText = `
+      background: rgba(0, 0, 0, 0.3);
+      padding: 6px 8px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      line-height: 1.4;
+      color: #b5cea8;
+      max-height: 120px;
+      overflow-y: auto;
+    `;
+
+      // Combine all properties from all matching rules
+      const allProperties = {};
+      stateData.forEach(rule => {
+        Object.entries(rule.properties).forEach(([prop, value]) => {
+          allProperties[prop] = value; // Later rules override
+        });
+      });
+
+      const propertiesText = Object.entries(allProperties)
+        .map(([prop, value]) => `<span style="color: #9cdcfe;">${prop}</span>: <span style="color: #ce9178;">${value}</span>;`)
+        .join('<br>');
+
+      cssDisplay.innerHTML = `:${state} {<br>${propertiesText}<br>}`;
+      stateContainer.appendChild(cssDisplay);
+
+      container.appendChild(stateContainer);
     });
 
-    container.appendChild(buttonContainer);
     return container;
+  }
+
+  // Helper function for state colors
+  function getStateColor(state) {
+    const colors = {
+      'hover': '#ff9800',
+      'focus': '#2196f3',
+      'active': '#f44336',
+      'focus-visible': '#9c27b0'
+    };
+    return colors[state] || '#4caf50';
   }
 
   /*  SELECTED ITEMS  */
@@ -2657,37 +2866,182 @@ ${d.selector} {
     });
     document.body.appendChild(overlay);
 
+    // const item = document.createElement("div");
+    // item.className = "di-panel-item";
+    // item.style.borderBottom = "1px solid #444";
+    // item.style.marginBottom = "8px";
+    // item.style.paddingBottom = "8px";
+
+    // // Breadcrumb
+    // const breadcrumb = createBreadcrumb(data.path, data);
+    // item.appendChild(breadcrumb);
+
+    // const header = document.createElement("div");
+    // header.innerHTML = `<b>${data.selector}</b><div style="color: #999; margin-top: 2px;">${data.width} × ${data.height}</div>`;
+
+    // // Pseudo-state controls
+    // const pseudoControls = createPseudoStateToggle(data);
+
+    // const cssPreview = document.createElement("pre");
+    // cssPreview.className = "di-css-preview";
+    // cssPreview.style.cssText = `
+    //   background: #2d2d2d;
+    //   padding: 8px;
+    //   margin: 8px 0;
+    //   border-radius: 4px;
+    //   font-size: 12px;
+    //   overflow-x: auto;
+    //   max-height: 200px;
+    //   overflow-y: auto;
+    //   font-family: 'Courier New', monospace;
+    //   line-height: 1.4;
+    // `;
+    // cssPreview.textContent = cssText(data);
+
     const item = document.createElement("div");
     item.className = "di-panel-item";
-    item.style.borderBottom = "1px solid #444";
-    item.style.marginBottom = "8px";
-    item.style.paddingBottom = "8px";
+    item.style.cssText = `
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  background: linear-gradient(135deg, rgba(40, 40, 40, 0.4) 0%, rgba(30, 30, 30, 0.4) 100%);
+  border-radius: 6px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+`;
 
-    // Breadcrumb
+    // Add hover effect
+    item.onmouseenter = () => {
+      item.style.background = "linear-gradient(135deg, rgba(45, 45, 45, 0.6) 0%, rgba(35, 35, 35, 0.6) 100%)";
+      item.style.borderColor = "rgba(79, 195, 247, 0.3)";
+      item.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.3)";
+    };
+    item.onmouseleave = () => {
+      item.style.background = "linear-gradient(135deg, rgba(40, 40, 40, 0.4) 0%, rgba(30, 30, 30, 0.4) 100%)";
+      item.style.borderColor = "rgba(255, 255, 255, 0.05)";
+      item.style.boxShadow = "none";
+    };
+
+    // Breadcrumb (improved styling in createBreadcrumb)
     const breadcrumb = createBreadcrumb(data.path, data);
     item.appendChild(breadcrumb);
 
+    // Header with better styling
     const header = document.createElement("div");
-    header.innerHTML = `<b>${data.selector}</b><div style="color: #999; margin-top: 2px;">${data.width} × ${data.height}</div>`;
+    header.style.cssText = `
+  margin: 8px 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  border-left: 3px solid #4fc3f7;
+`;
+    header.innerHTML = `
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+    <b style="color: #4fc3f7; font-size: 13px;">${data.selector}</b>
+    <span style="
+      background: rgba(76, 175, 80, 0.2);
+      color: #4caf50;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      border: 1px solid rgba(76, 175, 80, 0.3);
+    ">${data.display}</span>
+  </div>
+  <div style="color: #999; font-size: 12px; font-family: monospace;">
+    📐 ${data.width} × ${data.height}
+  </div>
+`;
+    item.appendChild(header);
 
-    // Pseudo-state controls
+    // Pseudo-state controls (now only shows if element has pseudo-states)
     const pseudoControls = createPseudoStateToggle(data);
+    if (pseudoControls) {
+      item.appendChild(pseudoControls);
+    }
+
+    // Improved CSS Preview with collapsible section
+    const cssSection = document.createElement("div");
+    cssSection.style.cssText = "margin: 8px 0;";
+
+    const cssHeader = document.createElement("div");
+    cssHeader.style.cssText = `
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: none;
+`;
+
+    const cssHeaderTitle = document.createElement("span");
+    cssHeaderTitle.style.cssText = `
+  font-size: 11px;
+  color: #9cdcfe;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+`;
+    cssHeaderTitle.innerHTML = `<span style="font-size: 14px;">{ }</span> CSS Properties`;
+
+    const cssToggleIcon = document.createElement("span");
+    cssToggleIcon.textContent = "▼";
+    cssToggleIcon.style.cssText = `
+  font-size: 10px;
+  color: #666;
+  transition: transform 0.2s;
+`;
+
+    cssHeader.appendChild(cssHeaderTitle);
+    cssHeader.appendChild(cssToggleIcon);
 
     const cssPreview = document.createElement("pre");
     cssPreview.className = "di-css-preview";
     cssPreview.style.cssText = `
-      background: #2d2d2d;
-      padding: 8px;
-      margin: 8px 0;
-      border-radius: 4px;
-      font-size: 10px;
-      overflow-x: auto;
-      max-height: 200px;
-      overflow-y: auto;
-      font-family: 'Courier New', monospace;
-      line-height: 1.4;
-    `;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 10px;
+  margin: 0;
+  border-radius: 0 0 4px 4px;
+  font-size: 10px;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  line-height: 1.6;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: none;
+  color: #d4d4d4;
+`;
     cssPreview.textContent = cssText(data);
+
+    // Toggle collapse
+    let isCollapsed = false;
+    cssHeader.onclick = (e) => {
+      e.stopPropagation();
+      isCollapsed = !isCollapsed;
+
+      if (isCollapsed) {
+        cssPreview.style.display = "none";
+        cssToggleIcon.style.transform = "rotate(-90deg)";
+        cssHeader.style.borderRadius = "4px";
+        cssHeader.style.borderBottom = "1px solid rgba(255, 255, 255, 0.1)";
+      } else {
+        cssPreview.style.display = "block";
+        cssToggleIcon.style.transform = "rotate(0deg)";
+        cssHeader.style.borderRadius = "4px 4px 0 0";
+        cssHeader.style.borderBottom = "none";
+      }
+    };
+
+    cssSection.appendChild(cssHeader);
+    cssSection.appendChild(cssPreview);
+    item.appendChild(cssSection);
 
     const btnContainer = document.createElement("div");
     btnContainer.style.display = "flex";
@@ -2708,20 +3062,26 @@ ${d.selector} {
 
     [copyBtn, clearBtn].forEach(b => Object.assign(b.style, {
       marginTop: "6px",
-      padding: "6px 10px",
+      padding: "8px 14px",
       border: "none",
-      borderRadius: "4px",
+      borderRadius: "5px",
       cursor: "pointer",
       fontFamily: "system-ui, -apple-system, sans-serif",
       fontSize: "11px",
-      fontWeight: "500",
-      transition: "all 0.2s"
+      fontWeight: "600",
+      transition: "all 0.2s",
+      boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+      textTransform: "uppercase",
+      letterSpacing: "0.5px"
     }));
 
-    copyBtn.style.background = "#007acc";
+    copyBtn.style.background = "linear-gradient(135deg, #007acc 0%, #005a9e 100%)";
     copyBtn.style.color = "#fff";
-    clearBtn.style.background = "#cc0000";
+    copyBtn.style.border = "1px solid rgba(255, 255, 255, 0.1)";
+
+    clearBtn.style.background = "linear-gradient(135deg, #dc3545 0%, #bd2130 100%)";
     clearBtn.style.color = "#fff";
+    clearBtn.style.border = "1px solid rgba(255, 255, 255, 0.1)";
 
     copyBtn.onmouseenter = () => copyBtn.style.background = "#005a9e";
     copyBtn.onmouseleave = () => copyBtn.style.background = "#007acc";
@@ -2761,7 +3121,6 @@ ${d.selector} {
   }
 
   /*  RULER / DISTANCE MEASUREMENT  */
-
   function startRulerMode() {
     if (S.rulerMode) return;
 
