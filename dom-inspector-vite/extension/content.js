@@ -75,35 +75,98 @@
     { name: 'Desktop Large', width: 2560, height: 1440, type: 'desktop' },
     { name: 'Custom', width: 0, height: 0, type: 'custom' }
   ];
-  // Default CSS values for diff
-  const DEFAULT_CSS = {
-    display: 'inline',
+
+  // Real browser default values for semantic filtering (DevTools-style)
+  const CSS_DEFAULTS = {
+    // Display & Positioning
+    display: 'block',
     position: 'static',
     top: 'auto',
     left: 'auto',
     right: 'auto',
     bottom: 'auto',
+    zIndex: 'auto',
+
+    // Box Model
+    margin: '0px',
+    marginTop: '0px',
+    marginRight: '0px',
+    marginBottom: '0px',
+    marginLeft: '0px',
+    padding: '0px',
+    paddingTop: '0px',
+    paddingRight: '0px',
+    paddingBottom: '0px',
+    paddingLeft: '0px',
     width: 'auto',
     height: 'auto',
-    margin: '0px',
-    padding: '0px',
+
+    // Borders
     border: '0px none rgb(0, 0, 0)',
+    borderWidth: '0px',
+    borderStyle: 'none',
+    borderColor: 'rgb(0, 0, 0)',
     borderRadius: '0px',
-    background: 'rgba(0, 0, 0, 0)',
+    outline: 'rgb(0, 0, 0) none 0px',
+    boxShadow: 'none',
+
+    // Typography
     color: 'rgb(0, 0, 0)',
     fontSize: '16px',
     fontFamily: 'serif',
     fontWeight: '400',
+    fontStyle: 'normal',
     lineHeight: 'normal',
     textAlign: 'start',
+    textDecoration: 'none',
+    textTransform: 'none',
+    letterSpacing: 'normal',
+    wordSpacing: 'normal',
+    whiteSpace: 'normal',
+
+    // Visual
+    background: 'rgba(0, 0, 0, 0)',
+    backgroundColor: 'rgba(0, 0, 0, 0)',
+    backgroundImage: 'none',
     opacity: '1',
-    zIndex: 'auto',
+    visibility: 'visible',
+
+    // Flexbox (only relevant when display: flex)
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    justifyContent: 'normal',
+    alignItems: 'normal',
+    alignContent: 'normal',
+    gap: 'normal',
+
+    // Grid (only relevant when display: grid)
+    gridTemplateColumns: 'none',
+    gridTemplateRows: 'none',
+    gridGap: 'normal',
+    gridAutoFlow: 'row',
+
+    // Other
     overflow: 'visible',
+    overflowX: 'visible',
+    overflowY: 'visible',
     cursor: 'auto',
-    boxShadow: 'none',
+    pointerEvents: 'auto',
     transform: 'none',
-    transition: 'all 0s ease 0s'
+    transition: 'all 0s ease 0s',
+    animation: 'none'
   };
+
+  // Properties that should never show (always noise)
+  const NEVER_SHOW = [
+    'webkitAppearance',
+    'webkitTapHighlightColor',
+    'webkitTextFillColor',
+    'webkitTextStroke',
+    'webkitFontSmoothing',
+    'mozAppearance',
+    'msOverflowStyle',
+    'scrollbarWidth'
+  ];
 
   /*  UTILS  */
   const remove = (el) => {
@@ -121,24 +184,149 @@
     S.state = newState;
   };
 
-  const isNonDefaultCSS = (prop, value) => {
-    if (!value || value === 'none' || value === 'auto') return false;
-    const defaultValue = DEFAULT_CSS[prop];
-    if (!defaultValue) return true;
+  const isNonDefaultCSS = (key, value, d) => {
+    // Null/undefined check
+    if (value == null) return false;
 
-    // Normalize values for comparison
-    const normalizedValue = value.trim();
-    const normalizedDefault = defaultValue.trim();
+    // Never show webkit/moz prefixed noise
+    if (NEVER_SHOW.includes(key)) return false;
+    if (key.startsWith('webkit') || key.startsWith('moz') || key.startsWith('ms')) return false;
 
-    if (normalizedValue === normalizedDefault) return false;
+    // Normalize value
+    const v = String(value).trim();
 
-    // Special cases
-    if (prop === 'margin' || prop === 'padding') {
-      return normalizedValue !== '0px';
+    // Skip empty values
+    if (v === '') return false;
+
+    // ===================================
+    // CONTEXT-AWARE FILTERING (Critical!)
+    // ===================================
+
+    // 1. Position-dependent properties
+    if (['top', 'left', 'right', 'bottom', 'zIndex'].includes(key)) {
+      if (!d || d.position === 'static') return false;
     }
-    if (prop === 'border') {
-      return !normalizedValue.startsWith('0px');
+
+    // 2. Flexbox properties (only for flex containers)
+    if (key.startsWith('flex') || key === 'justifyContent' || key === 'alignItems' || key === 'alignContent') {
+      if (!d || !d.display.includes('flex')) return false;
     }
+
+    // 3. Grid properties (only for grid containers)
+    if (key.startsWith('grid')) {
+      if (!d || !d.display.includes('grid')) return false;
+    }
+
+    // 4. Gap (only for flex/grid)
+    if (key === 'gap') {
+      if (!d || (!d.display.includes('flex') && !d.display.includes('grid'))) return false;
+      // Also filter out "normal" gap values
+      if (v === 'normal' || v === '0px' || v === '0') return false;
+    }
+
+    // ===================================
+    // UNIVERSAL NOISE FILTERS
+    // ===================================
+
+    // Zero values (always default)
+    if (v === '0px' || v === '0' || v === '0px 0px 0px 0px' || v === '0px 0px') return false;
+
+    // Auto/none/normal (usually default) - with exceptions
+    if (v === 'auto' || v === 'none' || v === 'normal') {
+      // Exception: display, position, overflow can have meaningful none/auto values
+      if (key === 'display' && v === 'none') return true;
+      if (key === 'position' && v !== 'static') return true;
+      if (key === 'overflow' || key === 'overflowX' || key === 'overflowY') {
+        if (v === 'auto' || v === 'hidden' || v === 'scroll') return true;
+      }
+      return false;
+    }
+
+    // Transparent backgrounds
+    if (v === 'rgba(0, 0, 0, 0)' || v === 'transparent') return false;
+
+    // ===================================
+    // CHECK AGAINST KNOWN DEFAULTS
+    // ===================================
+
+    const defaultValue = CSS_DEFAULTS[key];
+    if (defaultValue) {
+      // Exact match
+      if (defaultValue === v) return false;
+
+      // Normalized comparisons
+      if (key === 'margin' || key === 'padding') {
+        const normalized = v.replace(/\s+/g, ' ');
+        if (normalized === '0px 0px 0px 0px' || normalized === '0px') return false;
+      }
+
+      if (key === 'border' || key.startsWith('border')) {
+        if (v.startsWith('0px')) return false;
+        // Also check for "medium none" style defaults
+        if (v.includes('none') && v.includes('0px')) return false;
+      }
+
+      if (key === 'fontWeight') {
+        if ((v === '400' || v === 'normal') && (defaultValue === '400' || defaultValue === 'normal')) return false;
+      }
+
+      if (key === 'textAlign') {
+        if ((v === 'start' || v === 'left') && (defaultValue === 'start' || defaultValue === 'left')) return false;
+      }
+    }
+
+    // ===================================
+    // EDGE CASES & IMPROVEMENTS
+    // ===================================
+
+    // Don't show inherited color if it's black (default)
+    if (key === 'color' && (v === 'rgb(0, 0, 0)' || v === '#000000' || v === 'black' || v === '#000')) {
+      return false;
+    }
+
+    // Don't show font-family if it's generic serif/sans-serif only
+    if (key === 'fontFamily') {
+      const normalized = v.toLowerCase().replace(/['"]/g, '');
+      if (normalized === 'serif' || normalized === 'sans-serif' || normalized === 'times new roman') {
+        return false;
+      }
+    }
+
+    // Line-height: normal is always default
+    if (key === 'lineHeight' && v === 'normal') return false;
+
+    // Cursor: auto is default
+    if (key === 'cursor' && v === 'auto') return false;
+
+    // Transition: Filter out meaningless transitions
+    if (key === 'transition') {
+      // "all 0s ease 0s" or similar - meaningless
+      if (v.includes('0s') || v === 'all 0s ease 0s' || v === 'none') return false;
+      // If it contains a real duration, show it
+      const hasDuration = /(\d+\.?\d*)(ms|s)/.test(v);
+      if (!hasDuration || v.match(/^all 0+s/)) return false;
+    }
+
+    // Background: filter out transparent and rgba(0,0,0,0)
+    if (key === 'background' || key === 'backgroundColor') {
+      if (v === 'rgba(0, 0, 0, 0)' || v === 'transparent' || v === 'none') return false;
+    }
+
+    // Box-shadow: none is default
+    if (key === 'boxShadow' && v === 'none') return false;
+
+    // Border-radius: 0px is default
+    if (key === 'borderRadius' && (v === '0px' || v === '0')) return false;
+
+    // Opacity: 1 is default
+    if (key === 'opacity' && (v === '1' || v === '1.0')) return false;
+
+    // Transform: none is default
+    if (key === 'transform' && v === 'none') return false;
+
+    // ===================================
+    // PASS: This property is meaningful!
+    // ===================================
 
     return true;
   };
@@ -259,13 +447,14 @@
     return pseudoStates;
   };
 
-  // Generate colorized CSS text with only non-default values
-  // Generate colorized CSS text with only non-default values (HTML formatted for line-by-line)
-  const cssText = (d, showAll = false) => {
+  // Generate colorized CSS text showing ALL properties (no filtering)
+  const cssTextAll = (d) => {
     const properties = [
-      // Box Model (most important first) - REMOVED width and height
+      // Box Model
       { key: 'display', color: '#f9d71c', important: true },
       { key: 'position', color: '#f9d71c', important: true },
+      { key: 'width', color: '#b5cea8' },
+      { key: 'height', color: '#b5cea8' },
       { key: 'margin', color: '#f6b26b' },
       { key: 'padding', color: '#8bc3f5' },
 
@@ -294,17 +483,17 @@
       { key: 'boxShadow', label: 'box-shadow', color: '#dcdcaa' },
       { key: 'opacity', color: '#b5cea8' },
 
-      // Flexbox (only if flex)
-      { key: 'flexDirection', label: 'flex-direction', color: '#569cd6', flexOnly: true },
-      { key: 'justifyContent', label: 'justify-content', color: '#569cd6', flexOnly: true },
-      { key: 'alignItems', label: 'align-items', color: '#569cd6', flexOnly: true },
-      { key: 'flexWrap', label: 'flex-wrap', color: '#569cd6', flexOnly: true },
-      { key: 'gap', color: '#569cd6', flexOnly: true },
+      // Flexbox
+      { key: 'flexDirection', label: 'flex-direction', color: '#569cd6' },
+      { key: 'justifyContent', label: 'justify-content', color: '#569cd6' },
+      { key: 'alignItems', label: 'align-items', color: '#569cd6' },
+      { key: 'flexWrap', label: 'flex-wrap', color: '#569cd6' },
+      { key: 'gap', color: '#569cd6' },
 
-      // Grid (only if grid)
-      { key: 'gridTemplateColumns', label: 'grid-template-columns', color: '#9333ea', gridOnly: true },
-      { key: 'gridTemplateRows', label: 'grid-template-rows', color: '#9333ea', gridOnly: true },
-      { key: 'gridGap', label: 'grid-gap', color: '#9333ea', gridOnly: true },
+      // Grid
+      { key: 'gridTemplateColumns', label: 'grid-template-columns', color: '#9333ea' },
+      { key: 'gridTemplateRows', label: 'grid-template-rows', color: '#9333ea' },
+      { key: 'gridGap', label: 'grid-gap', color: '#9333ea' },
 
       // Other
       { key: 'overflow', color: '#9cdcfe' },
@@ -312,10 +501,76 @@
       { key: 'transition', color: '#dcdcaa' }
     ];
 
+    let cssLines = [];
+
+    properties.forEach(prop => {
+      const value = d[prop.key];
+      const label = prop.label || prop.key;
+
+      // Show everything - no filtering
+      if (value) {
+        cssLines.push(`
+    <div style="margin-bottom: 2px;">
+      <span style="color: #9cdcfe;">${label}</span><span style="color: #666;">:</span> <span style="color: ${prop.color};">${value}</span><span style="color: #666;">;</span>
+    </div>
+  `);
+      }
+    });
+
+    return cssLines.join('');
+  };
+
+  // Generate colorized CSS text with only non-default values
+  const cssText = (d, showAll = false) => {
+    const properties = [
+      { key: 'display', color: '#f9d71c', important: true, group: 'layout' },
+      { key: 'position', color: '#f9d71c', important: true, group: 'layout' },
+
+      { key: 'top', color: '#b5cea8', group: 'position' },
+      { key: 'left', color: '#b5cea8', group: 'position' },
+      { key: 'right', color: '#b5cea8', group: 'position' },
+      { key: 'bottom', color: '#b5cea8', group: 'position' },
+      { key: 'zIndex', label: 'z-index', color: '#b5cea8', group: 'position' },
+
+      { key: 'margin', color: '#f6b26b', group: 'box-model' },
+      { key: 'padding', color: '#8bc3f5', group: 'box-model' },
+      { key: 'border', color: '#dcdcaa', group: 'box-model' },
+      { key: 'borderRadius', label: 'border-radius', color: '#dcdcaa', group: 'box-model' },
+
+      { key: 'fontSize', label: 'font-size', color: '#b5cea8', important: true, group: 'typography' },
+      { key: 'fontFamily', label: 'font-family', color: '#ce9178', group: 'typography' },
+      { key: 'fontWeight', label: 'font-weight', color: '#b5cea8', group: 'typography' },
+      { key: 'lineHeight', label: 'line-height', color: '#b5cea8', group: 'typography' },
+      { key: 'color', color: '#ce9178', important: true, group: 'typography' },
+      { key: 'textAlign', label: 'text-align', color: '#9cdcfe', group: 'typography' },
+      { key: 'letterSpacing', label: 'letter-spacing', color: '#b5cea8', group: 'typography' },
+      { key: 'textTransform', label: 'text-transform', color: '#9cdcfe', group: 'typography' },
+      { key: 'textDecoration', label: 'text-decoration', color: '#9cdcfe', group: 'typography' },
+
+      { key: 'flexDirection', label: 'flex-direction', color: '#569cd6', flexOnly: true, group: 'flexbox' },
+      { key: 'justifyContent', label: 'justify-content', color: '#569cd6', flexOnly: true, group: 'flexbox' },
+      { key: 'alignItems', label: 'align-items', color: '#569cd6', flexOnly: true, group: 'flexbox' },
+      { key: 'flexWrap', label: 'flex-wrap', color: '#569cd6', flexOnly: true, group: 'flexbox' },
+      { key: 'gap', color: '#569cd6', flexOnly: true, group: 'flexbox' },
+
+      { key: 'gridTemplateColumns', label: 'grid-template-columns', color: '#9333ea', gridOnly: true, group: 'grid' },
+      { key: 'gridTemplateRows', label: 'grid-template-rows', color: '#9333ea', gridOnly: true, group: 'grid' },
+      { key: 'gridGap', label: 'grid-gap', color: '#9333ea', gridOnly: true, group: 'grid' },
+
+      { key: 'background', color: '#ce9178', group: 'visual' },
+      { key: 'boxShadow', label: 'box-shadow', color: '#dcdcaa', group: 'visual' },
+      { key: 'opacity', color: '#b5cea8', group: 'visual' },
+
+      { key: 'overflow', color: '#9cdcfe', group: 'other' },
+      { key: 'transform', color: '#dcdcaa', group: 'other' },
+      { key: 'transition', color: '#dcdcaa', group: 'other' }
+    ];
+
     const isFlex = d.display === 'flex' || d.display === 'inline-flex';
     const isGrid = d.display === 'grid' || d.display === 'inline-grid';
 
     let cssLines = [];
+    let currentGroup = null;
 
     properties.forEach(prop => {
       // Skip flex-only properties if not flex
@@ -327,20 +582,41 @@
       const value = d[prop.key];
       const label = prop.label || prop.key;
 
-      // If showAll is false, filter non-default values
-      if (!showAll) {
-        if (!isNonDefaultCSS(prop.key, value)) {
-          // Keep if marked as important
-          if (!prop.important) return;
+      // ⚠️ CRITICAL: Pass 'd' for context-aware filtering
+      if (!isNonDefaultCSS(prop.key, value, d)) {
+        // Keep if marked as important
+        if (!prop.important) return;
+      }
+
+      // Add group separator comment
+      if (prop.group && prop.group !== currentGroup) {
+        currentGroup = prop.group;
+        const groupNames = {
+          'layout': 'LAYOUT & DISPLAY',
+          'position': 'POSITIONING',
+          'box-model': 'BOX MODEL',
+          'typography': 'TYPOGRAPHY',
+          'flexbox': 'FLEXBOX',
+          'grid': 'GRID',
+          'visual': 'VISUAL EFFECTS',
+          'other': 'OTHER'
+        };
+
+        if (cssLines.length > 0) {
+          cssLines.push(`
+    <div style="margin-top: 8px; margin-bottom: 4px; color: #666; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+      /* ${groupNames[currentGroup]} */
+    </div>
+  `);
         }
       }
 
       // Format as line-by-line DIV (not inline span)
       cssLines.push(`
-      <div style="margin-bottom: 2px;">
-        <span style="color: #9cdcfe;">${label}</span><span style="color: #666;">:</span> <span style="color: ${prop.color};">${value}</span><span style="color: #666;">;</span>
-      </div>
-    `);
+    <div style="margin-bottom: 2px;">
+      <span style="color: #9cdcfe;">${label}</span><span style="color: #666;">:</span> <span style="color: ${prop.color};">${value}</span><span style="color: #666;">;</span>
+    </div>
+  `);
     });
 
     // Return formatted CSS
@@ -403,7 +679,8 @@
       const value = d[prop.key];
       const label = prop.label || prop.key;
 
-      if (!isNonDefaultCSS(prop.key, value)) {
+      // ⚠️ CRITICAL: Pass 'd' for context-aware filtering
+      if (!isNonDefaultCSS(prop.key, value, d)) {
         if (!prop.important) return;
       }
 
@@ -447,8 +724,8 @@
       selector: selector,
       path: getElementPath(el),
       fontSize: cs.fontSize,
-      color: cs.color,
-      background: cs.backgroundColor,
+      color: rgbToHex(cs.color),
+      background: rgbToHex(cs.backgroundColor),
       margin: cs.margin,
       marginValues: marginValues,
       padding: cs.padding,
@@ -1186,17 +1463,14 @@
         e.stopPropagation();
         showingAll = !showingAll;
 
-        const cssPreview = panelItem.querySelector('.di-css-preview');
-        if (cssPreview) {
-          if (showingAll) {
-            cssPreview.innerHTML = cssText(newData, true);
-            showAllBtn.textContent = "Show Less";
-            showAllBtn.style.background = "rgba(106, 90, 205, 0.4)";
-          } else {
-            cssPreview.innerHTML = cssText(newData, false);
-            showAllBtn.textContent = "Show All CSS";
-            showAllBtn.style.background = "rgba(106, 90, 205, 0.2)";
-          }
+        if (showingAll) {
+          cssPreview.innerHTML = cssTextAll(data); // Show ALL CSS without filtering
+          showAllBtn.textContent = "Show Less";
+          showAllBtn.style.background = "rgba(106, 90, 205, 0.4)";
+        } else {
+          cssPreview.innerHTML = cssText(data, false); // Show filtered CSS
+          showAllBtn.textContent = "Show All CSS";
+          showAllBtn.style.background = "rgba(106, 90, 205, 0.2)";
         }
       };
     }
@@ -2143,8 +2417,8 @@
         selector,
         path: getElementPath(el),
         fontSize: cs.fontSize,
-        color: cs.color,
-        background: cs.backgroundColor,
+        color: rgbToHex(cs.color),
+        background: rgbToHex(cs.backgroundColor),
         margin: cs.margin,
         marginValues: parseBox(cs.margin),
         padding: cs.padding,
@@ -2353,21 +2627,27 @@
     select.id = "di-preset-select";
     Object.assign(select.style, {
       padding: "4px 24px 4px 8px",
-      background: "rgba(255,255,255,0.05)",
-      border: "1px solid rgba(255,255,255,0.2)",
+      background: "rgba(255,255,255,0.95)",  // ← Lighter background
+      border: "1px solid rgba(0,0,0,0.2)",   // ← Darker border
       borderRadius: "3px",
-      color: "#fff",
+      color: "#000",  // ← BLACK text
       fontSize: "11px",
       cursor: "pointer",
       appearance: "none",
       minWidth: "180px",
-      backgroundImage: "url('data:image/svg+xml;charset=UTF-8,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%278%27%3e%3cpath fill=%27%23999%27 d=%27M0 0l6 8 6-8z%27/%3e%3c/svg%3e')",
+      backgroundImage: "url('data:image/svg+xml;charset=UTF-8,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%278%27%3e%3cpath fill=%27%23333%27 d=%27M0 0l6 8 6-8z%27/%3e%3c/svg%3e')",  // ← Darker arrow
       backgroundRepeat: "no-repeat",
       backgroundPosition: "right 8px center"
     });
 
-    select.onfocus = () => select.style.borderColor = "#007acc";
-    select.onblur = () => select.style.borderColor = "rgba(255,255,255,0.2)";
+    select.onfocus = () => {
+      select.style.borderColor = "#007acc";
+      select.style.boxShadow = "0 0 0 2px rgba(0, 122, 204, 0.2)";  // ← Add focus ring
+    };
+    select.onblur = () => {
+      select.style.borderColor = "rgba(0,0,0,0.2)";
+      select.style.boxShadow = "none";
+    };
 
     // Add option groups
     const currentOption = document.createElement("option");
@@ -3330,12 +3610,25 @@
       e.stopPropagation();
       showingAll = !showingAll;
 
+      // Find the panel item and CSS preview element
+      const clickedPanelItem = e.target.closest('.di-panel-item');
+      if (!clickedPanelItem) return;
+
+      const cssPreviewElement = clickedPanelItem.querySelector('.di-css-preview');
+      if (!cssPreviewElement) return;
+
+      // Get current data from selectedItems
+      const selectedItem = S.selectedItems.find(item => item.item === clickedPanelItem);
+      if (!selectedItem) return;
+
+      const currentData = selectedItem.data;
+
       if (showingAll) {
-        cssPreview.innerHTML = cssText(data, true); // Show ALL CSS
+        cssPreviewElement.innerHTML = cssTextAll(currentData); // Show ALL CSS
         showAllBtn.textContent = "Show Less";
         showAllBtn.style.background = "rgba(106, 90, 205, 0.4)";
       } else {
-        cssPreview.innerHTML = cssText(data, false); // Show filtered CSS
+        cssPreviewElement.innerHTML = cssText(currentData, false); // Show filtered CSS
         showAllBtn.textContent = "Show All CSS";
         showAllBtn.style.background = "rgba(106, 90, 205, 0.2)";
       }
@@ -4157,6 +4450,53 @@
     };
     return colors[hex] || '230, 126, 34';
   }
+  // Convert RGB/RGBA to Hex
+  function rgbToHex(rgb) {
+    // Handle already hex values
+    if (rgb.startsWith('#')) return rgb;
+
+    // Handle named colors
+    const namedColors = {
+      'black': '#000000',
+      'white': '#ffffff',
+      'red': '#ff0000',
+      'green': '#008000',
+      'blue': '#0000ff',
+      'yellow': '#ffff00',
+      'cyan': '#00ffff',
+      'magenta': '#ff00ff',
+      'transparent': 'transparent'
+    };
+
+    const lowerRgb = rgb.toLowerCase();
+    if (namedColors[lowerRgb]) return namedColors[lowerRgb];
+
+    // Handle rgba and rgb
+    const match = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+    if (!match) return rgb; // Return original if no match
+
+    const r = parseInt(match[1]);
+    const g = parseInt(match[2]);
+    const b = parseInt(match[3]);
+    const a = match[4] ? parseFloat(match[4]) : 1;
+
+    // If alpha is not 1, keep rgba format but add hex equivalent
+    if (a < 1) {
+      const hex = '#' + [r, g, b].map(x => {
+        const hex = x.toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+      }).join('');
+      return `${hex} (${Math.round(a * 100)}% opacity)`;
+    }
+
+    // Convert to hex
+    const hex = '#' + [r, g, b].map(x => {
+      const hex = x.toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+
+    return hex;
+  }
 
   function clearRulerVisuals() {
     S.rulerLines.forEach(line => remove(line));
@@ -4173,6 +4513,7 @@
 
     detachEventListeners();
     stopDrag();
+
     // Cleanup ruler mode
     if (S.rulerMode) {
       stopRulerMode();
@@ -4184,7 +4525,12 @@
       exitResponsiveMode();
     }
 
-    // NEW: Clean up iframe handlers
+    // Cleanup outline mode
+    if (S.outlineMode) {
+      stopOutlineMode();
+    }
+
+    // Clean up iframe handlers
     if (S.iframeHandlers && S.viewportFrame?.iframe) {
       const iframeDoc = S.viewportFrame.iframe.contentDocument;
       if (iframeDoc) {
@@ -4220,34 +4566,98 @@
       S.resizeObserver = null;
     }
 
-    // Remove responsive button
-    const responsiveBtn = document.getElementById("dom-responsive-btn");
-    if (responsiveBtn) remove(responsiveBtn);
+    // ===================================
+    // REMOVE ALL DOM ELEMENTS
+    // ===================================
 
     // Remove FAB container (includes all buttons)
     remove(S.inspectBtn);
-    S.inspectBtn = null;
+    const fabContainer = document.getElementById("dom-inspector-fab");
+    if (fabContainer) remove(fabContainer);
 
+    // Remove hover panel
+    remove(S.hoverPanel);
+    const hoverPanel = document.querySelector('.di-hover-panel');
+    if (hoverPanel) remove(hoverPanel);
+
+    // Remove selected panel container
+    remove(S.panelContainer);
+    const selectedPanel = document.querySelector('.di-selected-panel');
+    if (selectedPanel) remove(selectedPanel);
+
+    // Remove all box model layers
     Object.values(S.boxModelLayers).forEach(layer => remove(layer));
-    clearGridFlexOverlays();
+    document.querySelectorAll('.di-box-layer').forEach(el => remove(el));
 
-    // Clean up selected items
+    // Remove grid/flex overlays
+    clearGridFlexOverlays();
+    document.querySelectorAll('.di-grid-overlay, .di-flex-overlay').forEach(el => remove(el));
+
+    // Clean up selected items and their overlays
     if (Array.isArray(S.selectedItems)) {
       S.selectedItems.forEach(i => {
         remove(i.overlay);
+        remove(i.item);
         if (i.data && i.data.el) {
-          i.data.el.classList.remove('di-force-hover', 'di-force-focus', 'di-force-active');
+          i.data.el.classList.remove('di-force-hover', 'di-force-focus', 'di-force-active', 'di-force-focus-visible');
         }
       });
     }
 
+    // Remove any remaining selected overlays
+    document.querySelectorAll('.di-selected-overlay').forEach(el => remove(el));
+    document.querySelectorAll('.di-panel-item').forEach(el => remove(el));
+
     // Clean up pseudo-state styles
-    ['hover', 'focus', 'active'].forEach(state => {
+    ['hover', 'focus', 'active', 'focus-visible'].forEach(state => {
       const style = document.getElementById(`di-pseudo-style-${state}`);
       if (style) remove(style);
+
+      // Also remove any dynamically created force styles
+      const forceStyle = document.getElementById(`di-pseudo-force-${state}`);
+      if (forceStyle) remove(forceStyle);
+
+      // Remove styles with timestamp IDs
+      document.querySelectorAll(`[id^="di-pseudo-force-${state}-"]`).forEach(el => remove(el));
     });
 
-    // Reset all state
+    // Remove ruler elements
+    S.rulerLines.forEach(line => remove(line));
+    S.measurementLabels.forEach(label => remove(label));
+    document.querySelectorAll('.di-ruler-highlight, .di-ruler-selected, .di-ruler-target, .di-ruler-line, .di-ruler-arrow, .di-distance-label, .di-ruler-label').forEach(el => remove(el));
+
+    // Remove outline mode style
+    const outlineStyle = document.getElementById('di-outline-mode-style');
+    if (outlineStyle) remove(outlineStyle);
+
+    // Remove responsive mode elements
+    document.querySelectorAll('.di-viewport-overlay, .di-frame-container, .di-viewport-toolbar, .di-loading-indicator').forEach(el => remove(el));
+
+    // Remove any other inspector elements by class
+    document.querySelectorAll('[class*="di-"]').forEach(el => {
+      // Only remove if it's actually an inspector element
+      if (el.className && typeof el.className === 'string') {
+        const classes = el.className.split(' ');
+        if (classes.some(c => c.startsWith('di-'))) {
+          remove(el);
+        }
+      }
+    });
+
+    // ===================================
+    // RESTORE ORIGINAL STATE
+    // ===================================
+
+    // Restore body styles
+    document.body.style.cursor = "default";
+    if (S.originalBodyOverflow !== undefined) {
+      document.body.style.overflow = S.originalBodyOverflow;
+    }
+
+    // ===================================
+    // RESET ALL STATE VARIABLES
+    // ===================================
+
     S.hoverPanel = null;
     S.panelContainer = null;
     S.inspectBtn = null;
@@ -4263,25 +4673,35 @@
     S.panelX = null;
     S.panelY = null;
     S.isDragging = false;
-
-    document.body.style.cursor = "default";
-    window.__DOM_INSPECTOR__ = false;
-
-    console.log('[DOM Inspector] Cleanup complete');
-
-    if (S.rulerMode) {
-      stopRulerMode();
-    }
+    S.buttonsVisible = false;
+    S.fabMenuOpen = false;
+    S.panelCollapsed = false;
     S.rulerMode = false;
     S.rulerLines = [];
     S.measurementLabels = [];
     S.firstSelectedElement = null;
-    // Cleanup outline mode
-    if (S.outlineMode) {
-      stopOutlineMode();
-    }
     S.outlineMode = false;
     S.outlineStyleElement = null;
+    S.originalBodyOverflow = undefined;
+    S.originalViewportMeta = undefined;
+
+    // Reset handlers
+    S.handlers = {
+      mousemove: null,
+      click: null,
+      keydown: null,
+      scroll: null,
+      drag: null,
+      stopDrag: null,
+      rulerMouseMove: null,
+      rulerClick: null,
+      rulerKeyDown: null
+    };
+
+    // Reset global flag
+    window.__DOM_INSPECTOR__ = false;
+
+    console.log('[DOM Inspector] Complete cleanup finished - all elements removed');
   }
 
   /*  MESSAGES  */
@@ -4351,12 +4771,4 @@
   setState(STATES.IDLE);
 
   console.log('[DOM Inspector] Enhanced version initialized with:');
-  console.log('  ✓ Element path breadcrumb (clickable)');
-  console.log('  ✓ Live CSS diff (non-default styles only)');
-  console.log('  ✓ Pseudo-state inspector (:hover, :focus, :active)');
-  console.log('  ✓ Grid/Flex visual helpers');
-  console.log('  ✓ Performance-safe RAF throttling');
-  console.log('  ✓ Responsive Design Testing');
-  console.log('  ✓ Ruler & Distance Measurement');
-  console.log('  ✓ Outline All Elements Mode');
 })();
