@@ -259,47 +259,160 @@
     return pseudoStates;
   };
 
-  const cssText = (d) => `
-${d.selector} {
-  width: ${d.width};
-  height: ${d.height};
-  margin: ${d.margin};
-  padding: ${d.padding};
-  display: ${d.display};
-  position: ${d.position};
-  top: ${d.top};
-  left: ${d.left};
-  right: ${d.right};
-  bottom: ${d.bottom};
-  z-index: ${d.zIndex};
-  color: ${d.color};
-  background: ${d.background};
-  opacity: ${d.opacity};
-  font-size: ${d.fontSize};
-  font-family: ${d.fontFamily};
-  font-weight: ${d.fontWeight};
-  line-height: ${d.lineHeight};
-  text-align: ${d.textAlign};
-  letter-spacing: ${d.letterSpacing};
-  text-transform: ${d.textTransform};
-  text-decoration: ${d.textDecoration};
-  border: ${d.border};
-  border-radius: ${d.borderRadius};
-  box-shadow: ${d.boxShadow};
-  outline: ${d.outline};
-  flex-direction: ${d.flexDirection};
-  justify-content: ${d.justifyContent};
-  align-items: ${d.alignItems};
-  flex-wrap: ${d.flexWrap};
-  gap: ${d.gap};
-  grid-template-columns: ${d.gridTemplateColumns};
-  grid-template-rows: ${d.gridTemplateRows};
-  grid-gap: ${d.gridGap};
-  overflow: ${d.overflow};
-  cursor: ${d.cursor};
-  transition: ${d.transition};
-  transform: ${d.transform};
-}`.trim();
+  // Generate colorized CSS text with only non-default values
+  // Generate colorized CSS text with only non-default values (HTML formatted for line-by-line)
+  const cssText = (d, showAll = false) => {
+    const properties = [
+      // Box Model (most important first) - REMOVED width and height
+      { key: 'display', color: '#f9d71c', important: true },
+      { key: 'position', color: '#f9d71c', important: true },
+      { key: 'margin', color: '#f6b26b' },
+      { key: 'padding', color: '#8bc3f5' },
+
+      // Positioning
+      { key: 'top', color: '#b5cea8' },
+      { key: 'left', color: '#b5cea8' },
+      { key: 'right', color: '#b5cea8' },
+      { key: 'bottom', color: '#b5cea8' },
+      { key: 'zIndex', label: 'z-index', color: '#b5cea8' },
+
+      // Typography
+      { key: 'fontSize', label: 'font-size', color: '#b5cea8', important: true },
+      { key: 'fontFamily', label: 'font-family', color: '#ce9178' },
+      { key: 'fontWeight', label: 'font-weight', color: '#b5cea8' },
+      { key: 'lineHeight', label: 'line-height', color: '#b5cea8' },
+      { key: 'color', color: '#ce9178', important: true },
+      { key: 'textAlign', label: 'text-align', color: '#9cdcfe' },
+      { key: 'letterSpacing', label: 'letter-spacing', color: '#b5cea8' },
+      { key: 'textTransform', label: 'text-transform', color: '#9cdcfe' },
+      { key: 'textDecoration', label: 'text-decoration', color: '#9cdcfe' },
+
+      // Visual
+      { key: 'background', color: '#ce9178' },
+      { key: 'border', color: '#dcdcaa' },
+      { key: 'borderRadius', label: 'border-radius', color: '#dcdcaa' },
+      { key: 'boxShadow', label: 'box-shadow', color: '#dcdcaa' },
+      { key: 'opacity', color: '#b5cea8' },
+
+      // Flexbox (only if flex)
+      { key: 'flexDirection', label: 'flex-direction', color: '#569cd6', flexOnly: true },
+      { key: 'justifyContent', label: 'justify-content', color: '#569cd6', flexOnly: true },
+      { key: 'alignItems', label: 'align-items', color: '#569cd6', flexOnly: true },
+      { key: 'flexWrap', label: 'flex-wrap', color: '#569cd6', flexOnly: true },
+      { key: 'gap', color: '#569cd6', flexOnly: true },
+
+      // Grid (only if grid)
+      { key: 'gridTemplateColumns', label: 'grid-template-columns', color: '#9333ea', gridOnly: true },
+      { key: 'gridTemplateRows', label: 'grid-template-rows', color: '#9333ea', gridOnly: true },
+      { key: 'gridGap', label: 'grid-gap', color: '#9333ea', gridOnly: true },
+
+      // Other
+      { key: 'overflow', color: '#9cdcfe' },
+      { key: 'transform', color: '#dcdcaa' },
+      { key: 'transition', color: '#dcdcaa' }
+    ];
+
+    const isFlex = d.display === 'flex' || d.display === 'inline-flex';
+    const isGrid = d.display === 'grid' || d.display === 'inline-grid';
+
+    let cssLines = [];
+
+    properties.forEach(prop => {
+      // Skip flex-only properties if not flex
+      if (prop.flexOnly && !isFlex) return;
+
+      // Skip grid-only properties if not grid
+      if (prop.gridOnly && !isGrid) return;
+
+      const value = d[prop.key];
+      const label = prop.label || prop.key;
+
+      // If showAll is false, filter non-default values
+      if (!showAll) {
+        if (!isNonDefaultCSS(prop.key, value)) {
+          // Keep if marked as important
+          if (!prop.important) return;
+        }
+      }
+
+      // Format as line-by-line DIV (not inline span)
+      cssLines.push(`
+      <div style="margin-bottom: 2px;">
+        <span style="color: #9cdcfe;">${label}</span><span style="color: #666;">:</span> <span style="color: ${prop.color};">${value}</span><span style="color: #666;">;</span>
+      </div>
+    `);
+    });
+
+    // Return formatted CSS
+    if (cssLines.length === 0) {
+      return '<div style="color: #666; font-style: italic;">/* All default values */</div>';
+    }
+
+    return cssLines.join('');
+  };
+
+  // Plain text version for copying (unchanged, but remove width/height)
+  const cssTextPlain = (d) => {
+    const properties = [
+      { key: 'display', important: true },
+      { key: 'position', important: true },
+      // REMOVED: width and height
+      { key: 'margin' },
+      { key: 'padding' },
+      { key: 'top' },
+      { key: 'left' },
+      { key: 'right' },
+      { key: 'bottom' },
+      { key: 'zIndex', label: 'z-index' },
+      { key: 'fontSize', label: 'font-size', important: true },
+      { key: 'fontFamily', label: 'font-family' },
+      { key: 'fontWeight', label: 'font-weight' },
+      { key: 'lineHeight', label: 'line-height' },
+      { key: 'color', important: true },
+      { key: 'textAlign', label: 'text-align' },
+      { key: 'letterSpacing', label: 'letter-spacing' },
+      { key: 'textTransform', label: 'text-transform' },
+      { key: 'textDecoration', label: 'text-decoration' },
+      { key: 'background' },
+      { key: 'border' },
+      { key: 'borderRadius', label: 'border-radius' },
+      { key: 'boxShadow', label: 'box-shadow' },
+      { key: 'opacity' },
+      { key: 'flexDirection', label: 'flex-direction', flexOnly: true },
+      { key: 'justifyContent', label: 'justify-content', flexOnly: true },
+      { key: 'alignItems', label: 'align-items', flexOnly: true },
+      { key: 'flexWrap', label: 'flex-wrap', flexOnly: true },
+      { key: 'gap', flexOnly: true },
+      { key: 'gridTemplateColumns', label: 'grid-template-columns', gridOnly: true },
+      { key: 'gridTemplateRows', label: 'grid-template-rows', gridOnly: true },
+      { key: 'gridGap', label: 'grid-gap', gridOnly: true },
+      { key: 'overflow' },
+      { key: 'transform' },
+      { key: 'transition' }
+    ];
+
+    const isFlex = d.display === 'flex' || d.display === 'inline-flex';
+    const isGrid = d.display === 'grid' || d.display === 'inline-grid';
+
+    let cssLines = [`${d.selector} {`];
+
+    properties.forEach(prop => {
+      if (prop.flexOnly && !isFlex) return;
+      if (prop.gridOnly && !isGrid) return;
+
+      const value = d[prop.key];
+      const label = prop.label || prop.key;
+
+      if (!isNonDefaultCSS(prop.key, value)) {
+        if (!prop.important) return;
+      }
+
+      cssLines.push(`  ${label}: ${value};`);
+    });
+
+    cssLines.push('}');
+    return cssLines.join('\n');
+  };
 
   const getData = (el) => {
     // Check cache first
@@ -889,23 +1002,23 @@ ${d.selector} {
     }
   }
 
-  function createBreadcrumb(path, data) {
+  function createBreadcrumb(path, data, panelItem) {
     const breadcrumb = document.createElement("div");
     breadcrumb.className = "di-breadcrumb";
     breadcrumb.style.cssText = `
-  background: linear-gradient(135deg, rgba(30, 30, 30, 0.8) 0%, rgba(20, 20, 20, 0.8) 100%);
-  padding: 8px 12px;
-  border-radius: 4px;
-  margin-bottom: 10px;
-  font-size: 10px;
-  color: #999;
-  overflow-x: auto;
-  white-space: nowrap;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(79, 195, 247, 0.2);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
-  font-family: 'Courier New', monospace;
-`;
+    background: linear-gradient(135deg, rgba(30, 30, 30, 0.8) 0%, rgba(20, 20, 20, 0.8) 100%);
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    font-size: 10px;
+    color: #999;
+    overflow-x: auto;
+    white-space: nowrap;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(79, 195, 247, 0.2);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    font-family: 'Courier New', monospace;
+  `;
 
     path.forEach((segment, i) => {
       if (i > 0) {
@@ -918,28 +1031,64 @@ ${d.selector} {
       const part = document.createElement("span");
       part.textContent = segment;
       part.style.cssText = `
-        color: ${i === path.length - 1 ? '#4fc3f7' : '#999'};
-        cursor: pointer;
-        padding: 2px 4px;
-        border-radius: 2px;
-        transition: background 0.2s;
-      `;
+      color: ${i === path.length - 1 ? '#4fc3f7' : '#999'};
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 2px;
+      transition: background 0.2s;
+    `;
 
       part.onmouseenter = () => part.style.background = "rgba(255,255,255,0.1)";
       part.onmouseleave = () => part.style.background = "transparent";
 
-      // Click to navigate to parent element
+      // Click to navigate to parent element - UPDATE PANEL & ADD TO HISTORY
       part.onclick = (e) => {
         e.stopPropagation();
         let current = data.el;
         const stepsBack = path.length - 1 - i;
+
         for (let j = 0; j < stepsBack && current.parentElement; j++) {
           current = current.parentElement;
         }
+
         if (current && !isInspectorElement(current)) {
-          const parentData = getData(current);
-          updateBoxModelLayers(parentData);
-          updateHoverPanel(parentData);
+          const newData = getData(current);
+
+          // Update box model visualization
+          updateBoxModelLayers(newData);
+
+          // Update hover panel if visible
+          if (S.hoverPanel && S.hoverPanel.style.display !== 'none') {
+            updateHoverPanel(newData);
+            positionHoverPanel(newData);
+          }
+
+          // Update the panel item content (if panelItem is provided)
+          if (panelItem) {
+            // Add to history BEFORE updating
+            if (!panelItem.breadcrumbHistory) {
+              panelItem.breadcrumbHistory = [data];
+              panelItem.currentHistoryIndex = 0;
+            }
+
+            // Remove any "future" history if we're not at the end
+            if (panelItem.currentHistoryIndex < panelItem.breadcrumbHistory.length - 1) {
+              panelItem.breadcrumbHistory = panelItem.breadcrumbHistory.slice(0, panelItem.currentHistoryIndex + 1);
+            }
+
+            // Add new state to history
+            panelItem.breadcrumbHistory.push(newData);
+            panelItem.currentHistoryIndex = panelItem.breadcrumbHistory.length - 1;
+
+            // Update panel content (DON'T update breadcrumb - keep it as is)
+            updatePanelItemContent(panelItem, newData, false); // false = don't update breadcrumb
+
+            // Show undo button
+            const undoBtn = panelItem.querySelector('.di-undo-btn');
+            if (undoBtn) {
+              undoBtn.style.display = "flex";
+            }
+          }
         }
       };
 
@@ -947,6 +1096,111 @@ ${d.selector} {
     });
 
     return breadcrumb;
+  }
+
+  // Update panel item when breadcrumb changes (with option to preserve breadcrumb)
+  function updatePanelItemContent(panelItem, newData, updateBreadcrumb = true) {
+    if (!panelItem) return;
+
+    // Update breadcrumb ONLY if updateBreadcrumb is true
+    if (updateBreadcrumb) {
+      const breadcrumbContainer = panelItem.querySelector('.di-breadcrumb-container');
+      if (breadcrumbContainer) {
+        const oldBreadcrumb = breadcrumbContainer.querySelector('.di-breadcrumb');
+        if (oldBreadcrumb) {
+          const newBreadcrumb = createBreadcrumb(newData.path, newData, panelItem);
+          oldBreadcrumb.replaceWith(newBreadcrumb);
+        }
+      }
+    }
+
+    // Update collapsible header (selector + dimensions)
+    const headerLeft = panelItem.querySelector('.di-collapsible-header > div');
+    if (headerLeft) {
+      headerLeft.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+        <b style="color: #4fc3f7; font-size: 12px;">${newData.selector}</b>
+        <span style="
+          background: rgba(76, 175, 80, 0.2);
+          color: #4caf50;
+          padding: 2px 6px;
+          border-radius: 3px;
+          font-size: 9px;
+          font-weight: 600;
+          border: 1px solid rgba(76, 175, 80, 0.3);
+        ">${newData.display}</span>
+      </div>
+      <div style="color: #999; font-size: 10px; font-family: monospace;">
+        📐 ${newData.width} × ${newData.height}
+      </div>
+    `;
+    }
+
+    // Update CSS preview
+    const cssPreview = panelItem.querySelector('.di-css-preview');
+    if (cssPreview) {
+      // Check if currently showing all
+      const showAllBtn = panelItem.querySelector('.di-show-all-btn');
+      const showingAll = showAllBtn && showAllBtn.textContent === "Show Less";
+
+      cssPreview.innerHTML = cssText(newData, showingAll);
+    }
+
+    // Update pseudo-states section
+    const contentArea = panelItem.querySelector('.di-content-area');
+    if (contentArea) {
+      // Remove old pseudo-states
+      const oldPseudoPanel = contentArea.querySelector('.di-pseudo-state-panel');
+      if (oldPseudoPanel) {
+        oldPseudoPanel.remove();
+      }
+
+      // Add new pseudo-states if available
+      const newPseudoControls = createPseudoStateToggle(newData);
+      if (newPseudoControls) {
+        // Insert before CSS container
+        const cssContainer = contentArea.querySelector('div');
+        if (cssContainer) {
+          contentArea.insertBefore(newPseudoControls, cssContainer);
+        } else {
+          contentArea.appendChild(newPseudoControls);
+        }
+      }
+    }
+
+    // Update copy button to use new data
+    const copyBtn = panelItem.querySelector('.di-copy-btn');
+    if (copyBtn) {
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(cssTextPlain(newData));
+        copyBtn.textContent = "✓ Copied!";
+        setTimeout(() => copyBtn.textContent = "Copy CSS", 1500);
+      };
+    }
+
+    // Update "Show All CSS" button reference
+    const showAllBtn = panelItem.querySelector('.di-show-all-btn');
+    if (showAllBtn) {
+      let showingAll = showAllBtn.textContent === "Show Less";
+
+      showAllBtn.onclick = (e) => {
+        e.stopPropagation();
+        showingAll = !showingAll;
+
+        const cssPreview = panelItem.querySelector('.di-css-preview');
+        if (cssPreview) {
+          if (showingAll) {
+            cssPreview.innerHTML = cssText(newData, true);
+            showAllBtn.textContent = "Show Less";
+            showAllBtn.style.background = "rgba(106, 90, 205, 0.4)";
+          } else {
+            cssPreview.innerHTML = cssText(newData, false);
+            showAllBtn.textContent = "Show All CSS";
+            showAllBtn.style.background = "rgba(106, 90, 205, 0.2)";
+          }
+        }
+      };
+    }
   }
 
   function updateHoverPanel(data) {
@@ -2866,40 +3120,9 @@ ${d.selector} {
     });
     document.body.appendChild(overlay);
 
-    // const item = document.createElement("div");
-    // item.className = "di-panel-item";
-    // item.style.borderBottom = "1px solid #444";
-    // item.style.marginBottom = "8px";
-    // item.style.paddingBottom = "8px";
-
-    // // Breadcrumb
-    // const breadcrumb = createBreadcrumb(data.path, data);
-    // item.appendChild(breadcrumb);
-
-    // const header = document.createElement("div");
-    // header.innerHTML = `<b>${data.selector}</b><div style="color: #999; margin-top: 2px;">${data.width} × ${data.height}</div>`;
-
-    // // Pseudo-state controls
-    // const pseudoControls = createPseudoStateToggle(data);
-
-    // const cssPreview = document.createElement("pre");
-    // cssPreview.className = "di-css-preview";
-    // cssPreview.style.cssText = `
-    //   background: #2d2d2d;
-    //   padding: 8px;
-    //   margin: 8px 0;
-    //   border-radius: 4px;
-    //   font-size: 12px;
-    //   overflow-x: auto;
-    //   max-height: 200px;
-    //   overflow-y: auto;
-    //   font-family: 'Courier New', monospace;
-    //   line-height: 1.4;
-    // `;
-    // cssPreview.textContent = cssText(data);
-
     const item = document.createElement("div");
     item.className = "di-panel-item";
+    item.setAttribute('data-element-id', Date.now()); // Unique ID for updating
     item.style.cssText = `
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   margin-bottom: 12px;
@@ -2910,6 +3133,10 @@ ${d.selector} {
   border: 1px solid rgba(255, 255, 255, 0.05);
   transition: all 0.2s ease;
 `;
+
+    // Store breadcrumb history for this panel item
+    item.breadcrumbHistory = [data];
+    item.currentHistoryIndex = 0;
 
     // Add hover effect
     item.onmouseenter = () => {
@@ -2923,135 +3150,230 @@ ${d.selector} {
       item.style.boxShadow = "none";
     };
 
-    // Breadcrumb (improved styling in createBreadcrumb)
-    const breadcrumb = createBreadcrumb(data.path, data);
-    item.appendChild(breadcrumb);
+    // Breadcrumb with history support (DON'T update breadcrumb itself)
+    const breadcrumbContainer = document.createElement("div");
+    breadcrumbContainer.className = "di-breadcrumb-container";
+    breadcrumbContainer.style.cssText = "position: relative;";
 
-    // Header with better styling
-    const header = document.createElement("div");
-    header.style.cssText = `
-  margin: 8px 0;
-  padding: 8px;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-  border-left: 3px solid #4fc3f7;
+    const breadcrumb = createBreadcrumb(data.path, data, item);
+    breadcrumbContainer.appendChild(breadcrumb);
+
+    // Undo button (only show if history exists)
+    const undoBtn = document.createElement("button");
+    undoBtn.className = "di-undo-btn";
+    undoBtn.innerHTML = "↶";
+    undoBtn.title = "Go back to previous element";
+    undoBtn.style.cssText = `
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(255, 152, 0, 0.2);
+  border: 1px solid rgba(255, 152, 0, 0.4);
+  color: #ff9800;
+  width: 24px;
+  height: 24px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
 `;
-    header.innerHTML = `
-  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-    <b style="color: #4fc3f7; font-size: 13px;">${data.selector}</b>
+
+    undoBtn.onmouseenter = () => {
+      undoBtn.style.background = "rgba(255, 152, 0, 0.4)";
+      undoBtn.style.transform = "scale(1.1)";
+    };
+    undoBtn.onmouseleave = () => {
+      undoBtn.style.background = "rgba(255, 152, 0, 0.2)";
+      undoBtn.style.transform = "scale(1)";
+    };
+
+    undoBtn.onclick = (e) => {
+      e.stopPropagation();
+
+      if (item.currentHistoryIndex > 0) {
+        item.currentHistoryIndex--;
+        const previousData = item.breadcrumbHistory[item.currentHistoryIndex];
+
+        // Update everything EXCEPT breadcrumb
+        updatePanelItemContent(item, previousData, false); // false = don't update breadcrumb
+        updateBoxModelLayers(previousData);
+
+        // Hide undo button if at start of history
+        if (item.currentHistoryIndex === 0) {
+          undoBtn.style.display = "none";
+        }
+      }
+    };
+
+    breadcrumbContainer.appendChild(undoBtn);
+    item.appendChild(breadcrumbContainer);
+
+    // Collapsible Header (selector + dimensions)
+    const collapsibleHeader = document.createElement("div");
+    collapsibleHeader.className = "di-collapsible-header";
+    collapsibleHeader.style.cssText = `
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid rgba(79, 195, 247, 0.2);
+  margin-bottom: 8px;
+  transition: all 0.2s;
+`;
+
+    const headerLeft = document.createElement("div");
+    headerLeft.style.cssText = "flex: 1;";
+    headerLeft.innerHTML = `
+  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+    <b style="color: #4fc3f7; font-size: 12px;">${data.selector}</b>
     <span style="
       background: rgba(76, 175, 80, 0.2);
       color: #4caf50;
-      padding: 2px 8px;
+      padding: 2px 6px;
       border-radius: 3px;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 600;
       border: 1px solid rgba(76, 175, 80, 0.3);
     ">${data.display}</span>
   </div>
-  <div style="color: #999; font-size: 11px; font-family: monospace;">
+  <div style="color: #999; font-size: 10px; font-family: monospace;">
     📐 ${data.width} × ${data.height}
   </div>
 `;
-    item.appendChild(header);
 
-    // Pseudo-state controls (now only shows if element has pseudo-states)
-    const pseudoControls = createPseudoStateToggle(data);
-    if (pseudoControls) {
-      item.appendChild(pseudoControls);
-    }
-
-    // Improved CSS Preview with collapsible section
-    const cssSection = document.createElement("div");
-    cssSection.style.cssText = "margin: 8px 0;";
-
-    const cssHeader = document.createElement("div");
-    cssHeader.style.cssText = `
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 4px 4px 0 0;
-  cursor: pointer;
-  user-select: none;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-bottom: none;
-`;
-
-    const cssHeaderTitle = document.createElement("span");
-    cssHeaderTitle.style.cssText = `
-  font-size: 11px;
-  color: #9cdcfe;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-`;
-    cssHeaderTitle.innerHTML = `<span style="font-size: 14px;">{ }</span> CSS Properties`;
-
-    const cssToggleIcon = document.createElement("span");
-    cssToggleIcon.textContent = "▼";
-    cssToggleIcon.style.cssText = `
+    const headerToggle = document.createElement("span");
+    headerToggle.textContent = "▼";
+    headerToggle.style.cssText = `
   font-size: 10px;
   color: #666;
   transition: transform 0.2s;
+  margin-left: 8px;
 `;
 
-    cssHeader.appendChild(cssHeaderTitle);
-    cssHeader.appendChild(cssToggleIcon);
+    collapsibleHeader.appendChild(headerLeft);
+    collapsibleHeader.appendChild(headerToggle);
+    item.appendChild(collapsibleHeader);
 
-    const cssPreview = document.createElement("pre");
+    // Content area (pseudo-states + CSS)
+    const contentArea = document.createElement("div");
+    contentArea.className = "di-content-area";
+    contentArea.style.cssText = "display: block;";
+
+    // Pseudo-state controls (only if element has pseudo-states)
+    const pseudoControls = createPseudoStateToggle(data);
+    if (pseudoControls) {
+      contentArea.appendChild(pseudoControls);
+    }
+
+    // CSS Preview Container
+    const cssContainer = document.createElement("div");
+    cssContainer.style.cssText = "margin-top: 8px;";
+
+    // CSS Preview (line-by-line, larger text, NO width/height)
+    const cssPreview = document.createElement("div");
     cssPreview.className = "di-css-preview";
     cssPreview.style.cssText = `
   background: rgba(0, 0, 0, 0.4);
-  padding: 10px;
-  margin: 0;
-  border-radius: 0 0 4px 4px;
-  font-size: 10px;
+  padding: 12px;
+  border-radius: 4px;
+  font-size: 11.5px;
   overflow-x: auto;
-  max-height: 200px;
+  max-height: 250px;
   overflow-y: auto;
   font-family: 'Courier New', monospace;
   line-height: 1.6;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-top: none;
   color: #d4d4d4;
 `;
-    cssPreview.textContent = cssText(data);
 
-    // Toggle collapse
+    // Use colorized CSS (line-by-line format, NOT showing all by default)
+    cssPreview.innerHTML = cssText(data, false);
+
+    cssContainer.appendChild(cssPreview);
+
+    // "Show All CSS" button
+    const showAllBtn = document.createElement("button");
+    showAllBtn.className = "di-show-all-btn";
+    showAllBtn.textContent = "Show All CSS";
+    showAllBtn.style.cssText = `
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: rgba(106, 90, 205, 0.2);
+  border: 1px solid rgba(106, 90, 205, 0.4);
+  color: #9370db;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  transition: all 0.2s;
+  width: 100%;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+`;
+
+    let showingAll = false;
+
+    showAllBtn.onmouseenter = () => {
+      showAllBtn.style.background = "rgba(106, 90, 205, 0.3)";
+      showAllBtn.style.transform = "translateY(-1px)";
+    };
+    showAllBtn.onmouseleave = () => {
+      showAllBtn.style.background = "rgba(106, 90, 205, 0.2)";
+      showAllBtn.style.transform = "translateY(0)";
+    };
+
+    showAllBtn.onclick = (e) => {
+      e.stopPropagation();
+      showingAll = !showingAll;
+
+      if (showingAll) {
+        cssPreview.innerHTML = cssText(data, true); // Show ALL CSS
+        showAllBtn.textContent = "Show Less";
+        showAllBtn.style.background = "rgba(106, 90, 205, 0.4)";
+      } else {
+        cssPreview.innerHTML = cssText(data, false); // Show filtered CSS
+        showAllBtn.textContent = "Show All CSS";
+        showAllBtn.style.background = "rgba(106, 90, 205, 0.2)";
+      }
+    };
+
+    cssContainer.appendChild(showAllBtn);
+    contentArea.appendChild(cssContainer);
+    item.appendChild(contentArea);
+
+    // Toggle collapse on header click
     let isCollapsed = false;
-    cssHeader.onclick = (e) => {
+    collapsibleHeader.onclick = (e) => {
       e.stopPropagation();
       isCollapsed = !isCollapsed;
 
       if (isCollapsed) {
-        cssPreview.style.display = "none";
-        cssToggleIcon.style.transform = "rotate(-90deg)";
-        cssHeader.style.borderRadius = "4px";
-        cssHeader.style.borderBottom = "1px solid rgba(255, 255, 255, 0.1)";
+        contentArea.style.display = "none";
+        headerToggle.style.transform = "rotate(-90deg)";
+        collapsibleHeader.style.background = "rgba(0, 0, 0, 0.2)";
       } else {
-        cssPreview.style.display = "block";
-        cssToggleIcon.style.transform = "rotate(0deg)";
-        cssHeader.style.borderRadius = "4px 4px 0 0";
-        cssHeader.style.borderBottom = "none";
+        contentArea.style.display = "block";
+        headerToggle.style.transform = "rotate(0deg)";
+        collapsibleHeader.style.background = "rgba(0, 0, 0, 0.3)";
       }
     };
 
-    cssSection.appendChild(cssHeader);
-    cssSection.appendChild(cssPreview);
-    item.appendChild(cssSection);
-
+    // Action Buttons (smaller size)
     const btnContainer = document.createElement("div");
-    btnContainer.style.display = "flex";
-    btnContainer.style.gap = "6px";
+    btnContainer.style.cssText = "display: flex; gap: 6px; margin-top: 8px;";
 
     const copyBtn = document.createElement("button");
     copyBtn.className = "di-button di-copy-btn";
     copyBtn.textContent = "Copy CSS";
     copyBtn.onclick = () => {
-      navigator.clipboard.writeText(cssText(data));
+      navigator.clipboard.writeText(cssTextPlain(data));
       copyBtn.textContent = "✓ Copied!";
       setTimeout(() => copyBtn.textContent = "Copy CSS", 1500);
     };
@@ -3060,19 +3382,19 @@ ${d.selector} {
     clearBtn.className = "di-button di-clear-btn";
     clearBtn.textContent = "Remove";
 
+    // SMALLER button styles
     [copyBtn, clearBtn].forEach(b => Object.assign(b.style, {
-      marginTop: "6px",
-      padding: "8px 14px",
+      padding: "6px 10px",
       border: "none",
-      borderRadius: "5px",
+      borderRadius: "4px",
       cursor: "pointer",
       fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: "11px",
+      fontSize: "10px",
       fontWeight: "600",
       transition: "all 0.2s",
       boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
       textTransform: "uppercase",
-      letterSpacing: "0.5px"
+      letterSpacing: "0.3px"
     }));
 
     copyBtn.style.background = "linear-gradient(135deg, #007acc 0%, #005a9e 100%)";
@@ -3083,10 +3405,10 @@ ${d.selector} {
     clearBtn.style.color = "#fff";
     clearBtn.style.border = "1px solid rgba(255, 255, 255, 0.1)";
 
-    copyBtn.onmouseenter = () => copyBtn.style.background = "#005a9e";
-    copyBtn.onmouseleave = () => copyBtn.style.background = "#007acc";
-    clearBtn.onmouseenter = () => clearBtn.style.background = "#990000";
-    clearBtn.onmouseleave = () => clearBtn.style.background = "#cc0000";
+    copyBtn.onmouseenter = () => copyBtn.style.transform = "translateY(-1px)";
+    copyBtn.onmouseleave = () => copyBtn.style.transform = "translateY(0)";
+    clearBtn.onmouseenter = () => clearBtn.style.transform = "translateY(-1px)";
+    clearBtn.onmouseleave = () => clearBtn.style.transform = "translateY(0)";
 
     clearBtn.onclick = () => {
       remove(overlay);
@@ -3110,7 +3432,7 @@ ${d.selector} {
 
     btnContainer.appendChild(copyBtn);
     btnContainer.appendChild(clearBtn);
-    item.append(header, pseudoControls, cssPreview, btnContainer);
+    item.appendChild(btnContainer);
 
     const content = S.panelContainer?.querySelector(".di-panel-content");
     if (content) {
