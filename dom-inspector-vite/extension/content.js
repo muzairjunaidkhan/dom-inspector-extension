@@ -2492,91 +2492,93 @@
     S.hoverPanel.style.left = left + "px";
   }
 
-  function applyViewport(preset) {
-    if (!S.responsiveMode || !S.viewportFrame) return;
+  // function applyViewport(preset) {
+  //   if (!S.responsiveMode || !S.viewportFrame) return;
 
-    console.log('[DOM Inspector] Applying viewport:', preset);
+  //   console.log('[DOM Inspector] Applying viewport:', preset);
 
-    S.currentViewport = { ...preset };
+  //   S.currentViewport = { ...preset };
 
-    const iframe = S.viewportFrame.iframe;
-    const loadingIndicator = S.viewportFrame.loadingIndicator;
+  //   const iframe = S.viewportFrame.iframe;
+  //   const loadingIndicator = S.viewportFrame.loadingIndicator;
 
-    // Show loading
-    if (loadingIndicator) {
-      loadingIndicator.style.display = 'flex';
-      loadingIndicator.querySelector('div div:last-child').textContent =
-        `Loading ${preset.width}×${preset.height} viewport...`;
-    }
+  //   // Show loading
+  //   if (loadingIndicator) {
+  //     loadingIndicator.style.display = 'flex';
+  //     loadingIndicator.querySelector('div div:last-child').textContent =
+  //       `Loading ${preset.width}×${preset.height} viewport...`;
+  //   }
 
-    // Resize iframe
-    iframe.style.width = preset.width + "px";
-    iframe.style.height = preset.height + "px";
+  //   // Resize iframe
+  //   iframe.style.width = preset.width + "px";
+  //   iframe.style.height = preset.height + "px";
 
-    // Update UI
-    updateViewportDisplays(preset);
+  //   // Update UI
+  //   updateViewportDisplays(preset);
 
-    // Auto-fit zoom
-    autoFitZoom(preset);
+  //   // Auto-fit zoom
+  //   autoFitZoom(preset);
 
-    // Reload iframe to apply new dimensions
-    setTimeout(() => {
-      iframe.src = iframe.src;
-    }, 100);
-  }
+  //   // Reload iframe to apply new dimensions
+  //   setTimeout(() => {
+  //     iframe.src = iframe.src;
+  //   }, 100);
+  // }
 
-  function enterResponsiveMode() {
-    if (S.responsiveMode) return;
+  // function enterResponsiveMode() {
 
-    console.log('[DOM Inspector] Entering responsive mode...');
+  //   if (S.responsiveMode) return;
 
-    S.responsiveMode = true;
-    setState(STATES.SELECTED);
+  //   console.log('[DOM Inspector] Entering responsive mode...');
 
-    // Store original body overflow
-    S.originalBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+  //   S.responsiveMode = true;
+  //   setState(STATES.SELECTED);
 
-    // Set initial viewport
-    S.currentViewport = {
-      name: 'Current',
-      width: Math.min(window.innerWidth - 100, 1920),
-      height: Math.min(window.innerHeight - 100, 1080),
-      type: 'desktop'
-    };
+  //   // Store original body overflow
+  //   S.originalBodyOverflow = document.body.style.overflow;
+  //   document.body.style.overflow = 'hidden';
 
-    createViewportFrame();
+  //   // Set initial viewport
+  //   S.currentViewport = {
+  //     name: 'Current',
+  //     width: Math.min(window.innerWidth - 100, 1920),
+  //     height: Math.min(window.innerHeight - 100, 1080),
+  //     type: 'desktop'
+  //   };
 
-    console.log('[DOM Inspector] Responsive mode activated');
-  }
+  //   createViewportFrame();
 
-  function exitResponsiveMode() {
-    if (!S.responsiveMode) return;
+  //   console.log('[DOM Inspector] Responsive mode activated');
+  // }
 
-    console.log('[DOM Inspector] Exiting responsive mode...');
+  // function exitResponsiveMode() {
+  //   if (!S.responsiveMode) return;
 
-    S.responsiveMode = false;
+  //   console.log('[DOM Inspector] Exiting responsive mode...');
 
-    // Restore body overflow
-    if (S.originalBodyOverflow !== undefined) {
-      document.body.style.overflow = S.originalBodyOverflow;
-      S.originalBodyOverflow = undefined;
-    }
+  //   S.responsiveMode = false;
 
-    // Remove viewport frame
-    if (S.viewportFrame) {
-      remove(S.viewportFrame.overlay);
-      remove(S.viewportFrame.toolbar);
-      S.viewportFrame = null;
-    }
+  //   // Restore body overflow
+  //   if (S.originalBodyOverflow !== undefined) {
+  //     document.body.style.overflow = S.originalBodyOverflow;
+  //     S.originalBodyOverflow = undefined;
+  //   }
 
-    setState(STATES.IDLE);
+  //   // Remove viewport frame
+  //   if (S.viewportFrame) {
+  //     remove(S.viewportFrame.overlay);
+  //     remove(S.viewportFrame.toolbar);
+  //     S.viewportFrame = null;
+  //   }
 
-    console.log('[DOM Inspector] Responsive mode deactivated');
-  }
+  //   setState(STATES.IDLE);
+
+  //   console.log('[DOM Inspector] Responsive mode deactivated');
+  // }
 
 
   // Helper: Create dimension input
+  
   function createDimensionInput(id, value, label) {
     const container = document.createElement("div");
     container.style.cssText = "display: flex; align-items: center; gap: 4px;";
