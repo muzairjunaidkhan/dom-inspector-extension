@@ -63,3 +63,22 @@ export const setState = (newState) => {
   console.log(`[DOM Inspector] ${S.state} → ${newState}`);
   S.state = newState;
 };
+
+const _busListeners = new Map();
+export const EventBus = {
+  on(event, fn) {
+    if (!_busListeners.has(event)) _busListeners.set(event, new Set());
+    _busListeners.get(event).add(fn);
+    return () => EventBus.off(event, fn);
+  },
+  off(event, fn) {
+    _busListeners.get(event)?.delete(fn);
+  },
+  emit(event, payload) {
+    const fns = _busListeners.get(event);
+    if (!fns) return;
+    fns.forEach(fn => {
+      try { fn(payload); } catch (e) { console.error(`[EventBus] error in '${event}' listener:`, e); }
+    });
+  }
+};

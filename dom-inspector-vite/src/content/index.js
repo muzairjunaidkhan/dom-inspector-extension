@@ -1,15 +1,27 @@
-import { S, STATES, setState } from './core/state.js';
+import { S, STATES, setState, EventBus } from './core/state.js';
 import { startOutlineMode, stopOutlineMode } from './features/outline.js';
 import { startRulerMode, stopRulerMode } from './features/ruler.js';
 import { enterResponsiveMode, exitResponsiveMode } from './features/responsive.js';
 import { cleanup } from './ui/cleanup.js';
 import { showInspectorButtons, hideInspectorButtons } from './ui/fab.js';
+import { loadPrefs } from './features/prefs.js';
+import { initSelectorSearch } from './features/selector.js';
+import { addSelected } from './ui/selectedPanel.js';
 
-// Prevent multiple instances
-if (window.__DOM_INSPECTOR__) {
-  console.log('[DOM Inspector] Already initialized');
-} else {
+async function boot() {
+  if (window.__DOM_INSPECTOR__) {
+    console.log('[DOM Inspector] Already initialized');
+    return;
+  }
   window.__DOM_INSPECTOR__ = true;
+
+  await loadPrefs();
+
+  EventBus.on('inspector:select', (data) => {
+    if (data && data.el) addSelected(data);
+  });
+
+  initSelectorSearch();
 
   /*  MESSAGES  */
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
@@ -74,8 +86,9 @@ if (window.__DOM_INSPECTOR__) {
     });
   }
 
-  // Initialize
   setState(STATES.IDLE);
 
   console.log('[DOM Inspector] Enhanced version initialized with:');
 }
+
+boot();

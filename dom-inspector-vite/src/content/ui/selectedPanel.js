@@ -5,6 +5,51 @@ import { cssText, cssTextAll, cssTextPlain } from '../css/formatter.js';
 import { createPseudoStateToggle } from '../css/pseudoStates.js';
 import { updateBoxModelLayers } from '../features/boxModel.js';
 import { updateHoverPanel, positionHoverPanel } from './hoverPanel.js';
+import { renderPrefsPanel, destroyPrefsPanel } from './prefsPanel.js';
+
+let activeTab = 'inspect';
+
+function applyTabState() {
+  if (!S.panelContainer) return;
+  const content = S.panelContainer.querySelector('.di-panel-content');
+  const inspectBtn = S.panelContainer.querySelector('.di-tab-inspect');
+  const prefsBtn = S.panelContainer.querySelector('.di-tab-prefs');
+  if (!content) return;
+
+  if (activeTab === 'prefs') {
+    content.querySelectorAll('.di-panel-item').forEach(el => { el.style.display = 'none'; });
+    let host = content.querySelector('.di-prefs-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'di-prefs-host';
+      content.appendChild(host);
+    }
+    renderPrefsPanel(host);
+  } else {
+    destroyPrefsPanel();
+    const host = content.querySelector('.di-prefs-host');
+    if (host) host.remove();
+    content.querySelectorAll('.di-panel-item').forEach(el => { el.style.display = ''; });
+  }
+
+  [inspectBtn, prefsBtn].forEach(btn => {
+    if (!btn) return;
+    const isActive = (btn === inspectBtn && activeTab === 'inspect') || (btn === prefsBtn && activeTab === 'prefs');
+    btn.style.background = isActive ? 'rgba(79, 195, 247, 0.2)' : 'transparent';
+    btn.style.color = isActive ? '#4fc3f7' : '#999';
+    btn.style.borderColor = isActive ? 'rgba(79, 195, 247, 0.4)' : 'transparent';
+  });
+}
+
+export function switchTab(name) {
+  if (name !== 'inspect' && name !== 'prefs') return;
+  activeTab = name;
+  applyTabState();
+}
+
+export function getActiveTab() {
+  return activeTab;
+}
 
 export function createBreadcrumb(path, data, panelItem) {
   const breadcrumb = document.createElement("div");
@@ -240,9 +285,37 @@ export function ensurePanelContainer() {
       userSelect: "none"
     });
 
-    const title = document.createElement("span");
-    title.textContent = "Selected Elements";
-    title.style.fontWeight = "bold";
+    const tabStrip = document.createElement("div");
+    tabStrip.className = "di-tab-strip";
+    tabStrip.style.cssText = "display:flex; gap:4px; align-items:center;";
+
+    const makeTabBtn = (name, label) => {
+      const btn = document.createElement("button");
+      btn.className = `di-tab-btn di-tab-${name}`;
+      btn.textContent = label;
+      btn.style.cssText = `
+        background: transparent;
+        border: 1px solid transparent;
+        color: #999;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 3px;
+        cursor: pointer;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      `;
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        switchTab(name);
+      };
+      btn.onmousedown = (e) => e.stopPropagation();
+      return btn;
+    };
+
+    const inspectTab = makeTabBtn("inspect", "Inspect");
+    const prefsTab = makeTabBtn("prefs", "Prefs");
+    tabStrip.append(inspectTab, prefsTab);
 
     const collapseBtn = document.createElement("button");
     collapseBtn.className = "di-collapse-btn";
@@ -262,7 +335,7 @@ export function ensurePanelContainer() {
       togglePanelCollapse();
     };
 
-    header.appendChild(title);
+    header.appendChild(tabStrip);
     header.appendChild(collapseBtn);
 
     const content = document.createElement("div");
@@ -279,6 +352,7 @@ export function ensurePanelContainer() {
     header.addEventListener("mousedown", startDrag);
 
     document.body.appendChild(S.panelContainer);
+    applyTabState();
   }
 }
 
@@ -683,6 +757,7 @@ letter-spacing: 0.5px;
   const content = S.panelContainer?.querySelector(".di-panel-content");
   if (content) {
     content.appendChild(item);
+    if (activeTab === 'prefs') item.style.display = 'none';
   }
 
   S.selectedItems.push({ overlay, item, data });
